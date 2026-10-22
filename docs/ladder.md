@@ -314,7 +314,32 @@ per plug.
 
 | Battery % | diff at engage (mV) | ibus while engaged (mA) | Held | ibat (mA) | Anker watts |
 |---|---|---|---|---|---|
-| | | | | | |
+| 43-44 | 686 | **860-1020, steady** (diff 145-182) | **2 min, no drop**, until the unplug at step 4 | 2400-2850 | 2-3 for ~3 min before the engine armed, then **17** |
+
+Run 2026-10-22 20:36-20:41, trace `~/c0-exp5.trace` (t=1680-1792 s; engaged
+from 1708.05 to the detach at 1832.3). Params restored by the owner and
+checked by readback (1000 / 3000 / 8400 / 2000 / 500).
+
+What it shows:
+1. **With room at engage, the pump holds.** The PPS current was 3000 mA from
+   negotiate, and the pump stayed switching (REG_06 = 4, REG_07 = 128) for the
+   whole run without a single drop. That confirms lead 1: Experiment 4's
+   0.33 s drop came from engaging while the current was still ramping.
+2. **But it carries only ~1 A of the 2 A room.** With the buck at ~1 A, the input was
+   ~2 A at ~8.05 V (≈16 W; the Anker showed 17 W), so the Anker was not
+   current-limiting. The pump's current follows the voltage margin: diff held
+   at ~160 mV and ibus at ~1 A. The bus sat at ~8.05 V at the tablet against
+   the 8500 mV setpoint; while engaged the engine never moves the setpoint.
+3. **Why the 2-3 W start:** the 20:36 plug-in (t=1511) reported
+   `real_type 0` (unknown), so the engine stayed idle at 5 V. The ADSP
+   reported PD_PPS only 2 min 48 s later (t=1679). This happened on a quick
+   re-plug. Seen once; cause not known.
+
+Verdict: room fixes the drops. **More current needs more voltage while the
+pump runs**, which brings back the open question: do `SET_PPS_VOLT` writes
+after entry move the bus? Run 1 (setpoint 9500, bus ~8.05 V at 2.2 A, the
+Anker not current-limiting) says no; the vendor's Android code shows how
+Android does it.
 
 Verdict: ibus ~1500-2000 mA held for minutes → c3 = keep the ADC on, engage
 only once the PPS current is at its target, buck ICL below the PPS current,
