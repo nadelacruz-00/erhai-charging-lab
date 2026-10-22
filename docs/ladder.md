@@ -80,9 +80,30 @@ battery %) is c3's target, and the cable carries about 5 A (settles c1.5).
 Pass: one pump engage captured in `/sys/kernel/tracing/trace` at
 `pps_poll_ms=100`, with ibus; Anker direct still 24-25 W.
 
+Capture (root): `pps_poll_ms=100`, then
+`echo 1 > /sys/kernel/tracing/events/erhai_pps/enable`, plug in, save
+`/sys/kernel/tracing/trace`. Restore `pps_poll_ms=2000`. Samples carry the
+ADSP vbus, the setpoints, the pack, the pump's own vbus/vbat/diff/ibus, and
+raw REG_06/REG_07 (CHG_EN is bit 7 of REG_07). REG_0F is not read: an interrupt-flag register
+may clear on read and hide flags from the IRQ handler. The design asked for it.
+
+c0 also prints one `erhai_pps: adapter online: real_type … pps_type …
+pps_max_curr … vbus …` line per plug-in, for any adapter. The dock's line is
+the dock real_type read (and its VBUS: 5 V or more). The Anker's
+`pps_max_curr` is the current its PPS offer allows: above 3 A the Anker has
+seen a 5 A cable. The unit is raw ADSP, so compare it against a known 3 A cable.
+
 | Run | Battery % | Engage (vbus/vbat/diff/ibus) | Drop (vbus/vbat/diff/ibus) | Anker watts |
 |---|---|---|---|---|
 | | | | | |
+
+Seen before c0, package kernel `+b29`, 2026-10-22 16:57, Anker direct, 35 %:
+the pump engaged at `diff 653 mV` and stayed engaged for 3+ minutes with no
+drop line. The polls ran at 500 ms, which is `pps_cp_feed_ms` and is used only
+while the engine counts the pump as engaged. The input meanwhile was 8.01-8.06 V
+at the 3000 mA PPS setpoint, about 24 W. So at default
+settings the 24-25 W ceiling is the 3 A request, with or without the pump.
+Whether the pump was actually switching (ibus) is what c0 shows.
 
 ## c1 — experiments (params only)
 
@@ -141,9 +162,15 @@ branch (a). Follows with neither → record; branch (b) with the lift-timeout fa
 
 ### Dock real_type (today's kernel, no code)
 
-| Dock plugged | ADSP USB_REAL_TYPE (prop 11) | GET_PPS_TYPE (prop 32) |
-|---|---|---|
-| | | |
+Decision D12 (2026-10-22, after c-1): direct path first, and c2a is written
+only if this dock offers 9 V with the Anker upstream. Two ways to settle it:
+the Mac on the dock with the Anker upstream (above 15 W on the Anker means the
+dock offers 9 V, per the USB PD power rules), or c0's `adapter online` line
+with the dock plugged.
+
+| Dock plugged | ADSP USB_REAL_TYPE (prop 11) | GET_PPS_TYPE (prop 32) | VBUS (mV) |
+|---|---|---|---|
+| | | | |
 
 Params restored or tablet rebooted: yes (2026-10-22, after Experiment 2a: unplug, 3000/3000/8400, then pps_cp_enable=Y; verified by readback)
 
