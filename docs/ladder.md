@@ -107,6 +107,24 @@ ibat ~4.2-4.3 A with the pump engaged; at 17:07, on the buck path, ibat was
 the drop. Bus current was not measured. The 3000 mA is a setpoint, not a
 reading. Whether the pump was switching (ibus) is what c0 shows.
 
+Replug at 17:11:44 (39 %): the pump engaged twice during the current ramp
+(PPS setpoint 1250 then 1750 mA, `diff 486 mV`). Both times the very next
+feed dropped it (`diff 94`, then `85 mV`), and the session settled on the
+buck path at 8.13 V, ibat ~2.8 A. The Anker read **17-18 W**. No pump-on
+watts reading yet.
+
+Two leads for c0 to test (hypotheses, not findings):
+1. **Instant drops:** the 16:57 engage that held came at a 2000 mA setpoint.
+   The two instant drops came at 1250 and 1750 mA. If the pump draws more than
+   the PPS current setpoint, the source current-limits and VBUS sags below the
+   110 mV floor. c0's ibus at the drop (Experiment 1) shows whether ibus sits at
+   the setpoint.
+2. **The 6.5-minute drop:** in `erhai_pps.c` the PPS voltage servo runs only
+   while the pump is *not* engaged (the `else` branch of `a->cp_engaged()`).
+   While engaged, VBUS stays put as vbat rises, so `diff` can only shrink.
+   That fits a slow slide from 653 to 52 mV. c0's per-poll `diff` shows the
+   slope.
+
 ## c1 — experiments (params only)
 
 ### Experiment 2a — who owns VBUS (today's package kernel, no build)
