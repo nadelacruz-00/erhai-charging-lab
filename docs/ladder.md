@@ -247,6 +247,31 @@ Original verdict rule: vbus lands near 8.6 V minus the same offset, and ibus ris
 above 150 mA → the entry write sets the bus; c3 picks the entry voltage from
 2×vbat. vbus stays ~8.05 V → the bus is set elsewhere (record, rethink c3).
 
+### Experiment 4 — buck input limited to 1 A (c0 kernel, D14)
+
+One change from Experiment 3: `pps_iclim_ma=1000` (the buck's input limit,
+written at negotiate time). The PPS current stays at 3000 mA, so the Anker
+supplies the same 3 A as today; if the pump works, it carries the ~2 A the
+buck leaves. If the pump drops, charging falls to the 1 A buck until you
+replug with the defaults.
+
+1. Unplug everything. Battery below 75 %.
+2. `pps_iclim_ma=1000`, `pps_target_volt_mv=8600`, `pps_poll_ms=100`,
+   `pps_cp_feed_ms=100`; clear the trace **before** plugging in.
+3. Plug the Anker direct; 3 minutes; read the Anker's watts.
+4. Save the trace to `~/c0-exp4.trace`; restore `pps_iclim_ma=3000`,
+   `pps_target_volt_mv=8400`, `pps_poll_ms=2000`, `pps_cp_feed_ms=500`;
+   unplug and replug (the ICL only takes effect at negotiate).
+
+| Battery % | ibus while engaged (mA) | diff (mV) | ibat (mA) | Held | Anker watts |
+|---|---|---|---|---|---|
+| | | | | | |
+
+Verdict: ibus ≈ 1500-2000 mA held for minutes → the pump carries load when
+the buck leaves room; c3 limits the buck's ICL while the pump runs, then
+raises the PPS current. ibus stays ~18 mA → something other than the buck
+starves the pump (record, look at REG_06 bits and the ADSP).
+
 ### Experiment 2b — VOOCPHY_ENABLE 1 vs 0 (c0 kernel)
 
 Same as 2a with `pps_voocphy_enable` = 1, then 0. Restore `pps_voocphy_enable=1`
