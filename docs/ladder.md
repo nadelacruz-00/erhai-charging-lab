@@ -443,6 +443,26 @@ beyond the 5 s entry. Open question the trace answers: does the bus follow
 | Run | Target (mA) | Pump held (min) | ibus (mA) | Pack (mA) | Anker watts | Exits clean (80 %, unplug) |
 |---|---|---|---|---|---|---|
 | 1 (build 3, 2026-10-22 21:37) | 3000 | **never engaged** | 20 | discharging ~1.2 A | **0.1 W for ~5.5 min** | unplug: clean |
+| 1b (build 4, 22:18) | 3000 | **6.6 (394 s), no drop** | 2919 median (2257-3001 after 20 s) | 5004 median | **28** | unplug: drop at diff −41 → buck resumed → detach exit, clean |
+| 2 (build 4, 22:31) | 4000 | **3.9 (236 s), no drop** | 2895 median, max 3440 | 4967 median, max ~6200 | **32-33** | params restored by readback |
+
+Runs 1b and 2 (traces `~/c3-run1b.trace`, `~/c3-run2.trace`), battery 55 → 62 %:
+- **The recipe works.** The pump engaged 0.5 s after the entry request in both
+  runs and stayed engaged with the buck suspended; REG_06 = 4 / REG_07 = 128
+  throughout.
+- **The guard held:** one `buck_off` sample without the pump per run, the
+  ~0.3 s between the entry request and the engage. The unplug in 1b went
+  drop → buck resumed → detach exit.
+- **Pack temperature 32-33 °C in both runs.**
+- **Run 2 never reached 4000 mA:** the servo walked the setpoint to the
+  `pps_cp_max_volt_mv` ceiling (9500) within ~20 s and stopped there. At
+  9.5 V requested, the bus at the tablet was ~8.84 V, diff ~440 mV (well under
+  `pps_cp_diff_max_mv` 650) and ibus ~2.9 A, so the 9500 ceiling is the limit,
+  not the pump. The Anker's 32-33 W is above 9.5 V × 2.9 A ≈ 27.5 W; the pump's
+  ibus ADC and the Anker display differ by more than in run 1b (28 W at the same
+  median ibus). Not resolved: the Anker figure is read by eye.
+- The vendor's ceiling is 11000 − 500 = 10500 mV (`docs/vendor-pps.md`);
+  the SC8547A's VBUS_OVP is 10 V at the chip.
 
 **Run 1 failed the guard.** At t=238.4 the entry ran ("buck suspended,
 request 8640 mV at 3000 mA"). The Anker followed the 34 + 35 pair: ADSP vbus
