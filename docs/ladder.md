@@ -265,7 +265,30 @@ replug with the defaults.
 
 | Battery % | ibus while engaged (mA) | diff (mV) | ibat (mA) | Held | Anker watts |
 |---|---|---|---|---|---|
-| | | | | | |
+| 43 | 538 at the drop | 685 at engage → 92 at the drop | 650-1070 on the 1 A buck | **0.33 s**, never re-engaged | 8-9 |
+
+Run 2026-10-22 20:32, trace `~/c0-exp4.trace`. Params restored by the owner
+and checked by readback (3000 / 8400 / 2000 / 500).
+
+What it shows:
+1. **The pump engaged while the PPS current setpoint was 1500 mA** (still
+   ramping). It started carrying current (538 mA) on top of the ~1 A buck,
+   the total hit the 1500 mA source limit, chip vbus fell 560 mV
+   (8471 → 7912) in 0.33 s, and the window floor dropped it. That fits lead 1:
+   engaging before the current ramp is done starves the pump.
+2. **After the drop the pump's ADC is off, so the engine steers on stale
+   numbers.** The pump teardown (`sc8547_reset_voocphy`, `sc8547a.c:799`)
+   writes REG_11 = 0x00, which turns the ADC off. The next 855 samples (85 s) all read
+   `chip_vbus=7912 chip_vbat=3910 diff=92 ibus=556`, while the ADSP vbus
+   read 8583-8625 V. On that frozen `diff 92` the voltage servo walked the
+   setpoint from 8600 to the 9500 ceiling in 50 mV steps, and `cp_engage()`
+   (which reads the same registers) kept refusing. **The pump can never
+   re-engage after a drop until the ADC is turned on again.** This is a code bug,
+   not a tuning problem.
+3. 8-9 W = the 1 A buck at 8.6 V, as expected after a drop.
+
+Verdict: neither outcome in the rule below. The pump got 0.33 s, so whether
+it carries load for minutes when it has room is still open.
 
 Verdict: ibus ≈ 1500-2000 mA held for minutes → the pump carries load when
 the buck leaves room; c3 limits the buck's ICL while the pump runs, then
