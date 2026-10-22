@@ -464,6 +464,13 @@ Runs 1b and 2 (traces `~/c3-run1b.trace`, `~/c3-run2.trace`), battery 55 → 62 
 - The vendor's ceiling is 11000 − 500 = 10500 mV (`docs/vendor-pps.md`);
   the SC8547A's VBUS_OVP is 10 V at the chip.
 
+Run 2b (D17): run 2 again with `pps_cp_max_volt_mv=9900`. With no load the
+Anker overshoots by 110-190 mV (run 1), so the bus can reach ~10.0-10.1 V at
+the cap, but only after the pump has stopped (drop or unplug). Then the pump's
+10 V VBUS_OVP no longer matters, and the buck (VAC_OVP 12 V) has the plug.
+While engaged, the cable drop keeps the chip well under 10 V (8.84 V in
+run 2). Restore 9500 after the run.
+
 **Run 1 failed the guard.** At t=238.4 the entry ran ("buck suspended,
 request 8640 mV at 3000 mA"). The Anker followed the 34 + 35 pair: ADSP vbus
 went from ~8.4 to 8.75-8.83 V, and chip diff was 657 mV, inside the window.
