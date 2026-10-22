@@ -594,4 +594,21 @@ policy - pump off, buck holds the pack` / `charge inhibit released`.
 Re-test: bypass ON with the Anker direct → pack ~0 A, Anker watts ≈ system
 load; bypass OFF → pump back, ~39 W.
 
+**Build 7 bypass test** (2026-10-23 00:2x-00:40, 68 %, Anker direct, never
+unplugged): bypass ON → 3-4 W (10 W under heavy apps), pack holding;
+bypass OFF → pump back, 39 W, +2 %; bypass ON again at t=456.6 →
+"charging inhibited by policy - pump off" and the pump disengaged, but the
+input stayed at **0.1 W with the pack at −1.37 A**. The release had
+written ICL 3000000 to resume the buck.
+Hand test through `/sys/kernel/debug/erhai_otg/cmd` in that state:
+`5 3000000 0x33` → still 0.1 W; `5 4294967295 0x33` (0xFFFFFFFF) →
+input back, pack at −3 mA (held). **Fact: after an ICL 0 suspend, the ADSP
+releases the input only on 0xFFFFFFFF.** An ordinary limit does not release it.
+This also explains the dock bug, the 10 s re-arm hold-off after a pump drop
+(the buck stayed suspended, not resumed) and plausibly b29's 6-8 W after a
+session (revert ICL 1.5 A).
+
+Fix, `0006` (local, not pushed until the dock test passes): the buck resume
+and the revert write 0xFFFFFFFF instead of 3000 mA / 1.5 A.
+
 PR: _link_.
