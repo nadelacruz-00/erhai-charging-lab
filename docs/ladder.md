@@ -442,7 +442,33 @@ beyond the 5 s entry. Open question the trace answers: does the bus follow
 
 | Run | Target (mA) | Pump held (min) | ibus (mA) | Pack (mA) | Anker watts | Exits clean (80 %, unplug) |
 |---|---|---|---|---|---|---|
-| | | | | | | |
+| 1 (build 3, 2026-10-22 21:37) | 3000 | **never engaged** | 20 | discharging ~1.2 A | **0.1 W for ~5.5 min** | unplug: clean |
+
+**Run 1 failed the guard.** At t=238.4 the entry ran ("buck suspended,
+request 8640 mV at 3000 mA"). The Anker followed the 34 + 35 pair: ADSP vbus
+went from ~8.4 to 8.75-8.83 V, and chip diff was 657 mV, inside the window.
+But with the buck suspended the pack was briefly running the tablet, and its
+`current_now` went negative. `pps_read_battery()` (from before this lab)
+treated any negative reading as an error (`if (... i < 0 ...) return -EIO`),
+so every CHARGING poll returned before `pps_cp_step()`: no engage, no 5 s
+entry timeout, no temp/vbat exits. The buck stayed suspended until the owner
+unplugged at t=569 (the trace shows `cp=0 buck_off=1` at a steady 320 ms
+cadence, with stale pack readings). Battery 58 %, 33 °C; no harm beyond the
+discharge.
+
+Fix (build 4, `0002` updated, commit `5c57b20`):
+1. **Read fix:** `pps_psy_int()` returns the errno separately, so a negative
+   current is a reading.
+2. **Read-failure guard:** a failed pack read in CHARGING/TAPER releases
+   the pump and resumes the buck.
+3. **Backstop:** `pps_cp_backstop()` runs after every poll, outside all of
+   `pps_poll()`'s early returns. A suspended buck must have an engaged pump fed
+   within 1000 ms, or be inside the entry window + 1 s; otherwise the buck is
+   resumed at once.
+
+Also learned: **the 34 + 35 pair moved the bus** after entry (8.4 → ~8.75 V
+for an 8640 request, unloaded). That answers the open question for the
+unloaded case.
 
 ## c4 — `30-pr-final`
 
