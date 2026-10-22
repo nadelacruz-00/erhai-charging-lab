@@ -640,4 +640,11 @@ checked to rebuild the exact tested tree. Final checks on that build:
 | Anker session, unplug, dock: charging (≥ 6-8 W, pack > 0) | |
 | Anker direct default ≈ 39 W; replug; 80 % `soc-limit` exit clean | |
 
-PR: _link_.
+Final checks on build 8 (2026-10-23, `lab-30-pr-final-8`): bypass on → off →
+on → off without unplugging held/charged every time, with every pump entry
+engaged on the first attempt (no `entry timed out`); after an Anker session
+the dock read 6-8 W with the pack charging. 24 h soak not done.
+
+PR: https://github.com/TheMojoMan/oneplus-erhai-linux/pull/2 (branch
+`nadelacruz-00:erhai-pps-charging` → `7.3-rc5`, four commits, tree identical
+to build 8). HDMI issue: https://github.com/TheMojoMan/oneplus-erhai-linux/issues/3.
