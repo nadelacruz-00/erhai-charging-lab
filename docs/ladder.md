@@ -471,6 +471,22 @@ the cap, but only after the pump has stopped (drop or unplug). Then the pump's
 While engaged, the cable drop keeps the chip well under 10 V (8.84 V in
 run 2). Restore 9500 after the run.
 
+| Run | Target (mA) | Ceiling (mV) | Pump held | ibus after 20 s (mA) | diff (mV) | Pack (mA) | Temp (°C) | Anker watts |
+|---|---|---|---|---|---|---|---|---|
+| 2b (build 4, 2026-10-22 22:45, 64-65 %) | 4000 | 9900 | whole capture (83 s), no drop | **3761 median**, max 3956 | 606 median (474-641) | 6944 median | 32-34 | **39** |
+
+Run 2b (trace `~/c3-run2b.trace`): the servo reached the 9900 ceiling within
+~20 s and diff climbed to ~600, close to `pps_cp_diff_max_mv` (650) and the
+pump's 700 mV drop line. Highest chip vbus 9172 mV, ADSP vbus 9227 mV, well
+under the 10 V VBUS_OVP while engaged. **39 W beats Android's screen-on
+35-36 W** (c-1) at the same pack temperature as at 3 A.
+
+Where 5 A stops: at 3.76 A one pump already needs diff ~600. Scaling that
+puts 5 A near ~800 mV, past the pump's 700 mV window. Android's virtual_cp
+runs two SC8547A in parallel (`docs/vendor-pps.md`), which halves the drop
+per pump. The port's PPS path drives only the master. 5 A needs the slave
+pump in the PPS path; that is code, not a setting.
+
 **Run 1 failed the guard.** At t=238.4 the entry ran ("buck suspended,
 request 8640 mV at 3000 mA"). The Anker followed the 34 + 35 pair: ADSP vbus
 went from ~8.4 to 8.75-8.83 V, and chip diff was 657 mV, inside the window.
