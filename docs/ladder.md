@@ -295,6 +295,33 @@ the buck leaves room; c3 limits the buck's ICL while the pump runs, then
 raises the PPS current. ibus stays ~18 mA → something other than the buck
 starves the pump (record, look at REG_06 bits and the ADSP).
 
+### Experiment 5 — the pump's first try with room (c0 kernel, D15)
+
+Changes from Experiment 4: `pps_start_curr_ma=3000` (the PPS current is
+3000 mA from negotiate, no ramp) and `pps_target_volt_mv=8500` (at 44 %,
+2×vbat ≈ 7.85 V, so the entry lands near diff 600, inside the 700 ceiling).
+The buck stays at `pps_iclim_ma=1000`, so the pump has ~2 A of room at its
+first engage. Total current stays at 3000 mA. Because of the ADC bug the pump gets one try
+per plug.
+
+1. Unplug the Anker. Battery below 75 %.
+2. `pps_start_curr_ma=3000`, `pps_iclim_ma=1000`, `pps_target_volt_mv=8500`,
+   `pps_poll_ms=100`, `pps_cp_feed_ms=100`; clear the trace.
+3. Plug the Anker direct; 3 minutes; read the Anker's watts.
+4. Save the trace to `~/c0-exp5.trace`; restore `pps_start_curr_ma=1000`,
+   `pps_iclim_ma=3000`, `pps_target_volt_mv=8400`, `pps_poll_ms=2000`,
+   `pps_cp_feed_ms=500`; unplug and replug.
+
+| Battery % | diff at engage (mV) | ibus while engaged (mA) | Held | ibat (mA) | Anker watts |
+|---|---|---|---|---|---|
+| | | | | | |
+
+Verdict: ibus ~1500-2000 mA held for minutes → c3 = keep the ADC on, engage
+only once the PPS current is at its target, buck ICL below the PPS current,
+and then raise the PPS current toward 5 A. A drop within seconds with ibus
+near 2 A → something besides room starves it (read REG_06 and the diff at
+the drop).
+
 ### Experiment 2b — VOOCPHY_ENABLE 1 vs 0 (c0 kernel)
 
 Same as 2a with `pps_voocphy_enable` = 1, then 0. Restore `pps_voocphy_enable=1`
