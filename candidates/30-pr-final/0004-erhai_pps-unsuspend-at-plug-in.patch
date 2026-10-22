@@ -1,0 +1,51 @@
+diff --color -ruN c4/drivers/power/supply/erhai_pps.c c5/drivers/power/supply/erhai_pps.c
+--- c4/drivers/power/supply/erhai_pps.c	2026-10-22 23:44:40.216734003 +0800
++++ c5/drivers/power/supply/erhai_pps.c	2026-10-22 23:45:15.636849358 +0800
+@@ -150,6 +150,10 @@
+ 
+ #define PPS_USB_TYPE_PD_PPS		8	/* POWER_SUPPLY_USB_TYPE_PD_PPS */
+ 
++/* USB_INPUT_CURR_LIMIT "unsuspend": no limit from the host (vendor
++ * oplus_hal_adsp.c:6294 writes this to release WIRED_CHARGE_SUSPEND) */
++#define PPS_ICL_UNSUSPEND		0xFFFFFFFF
++
+ #define PPS_USB_OP_GET			0x32
+ #define PPS_USB_OP_SET			0x33
+ #define PPS_BATT_OP_GET			0x30
+@@ -644,6 +648,8 @@
+ 	p->stall_count = 0;
+ 	p->buck_off = false;
+ 	p->cp_lift_since = 0;
++	/* the next attached poll re-runs the plug-in unsuspend */
++	p->plug_logged = false;
+ }
+ 
+ /* ---- state transitions ---- */
+@@ -875,12 +881,25 @@
+ 			return;
+ 		}
+ 		if (!p->plug_logged) {
++			int icl = pps_usb_get(PPS_PROP_USB_INPUT_CURR_LIMIT);
++
+ 			p->plug_logged = true;
+-			pr_info("erhai_pps: adapter online: real_type %d pps_type %d pps_max_curr %d vbus %d mV\n",
++			/*
++			 * Every plug-in starts unsuspended: the revert at a
++			 * detach runs after the cable is gone, and the ADSP appears
++			 * to keep the last input limit it took while attached (0
++			 * when a session ends with the pump running; "icl was" below
++			 * shows what it held).  Left alone, the
++			 * next fixed-PD/5 V charger never charges (lab c4 dock
++			 * check: pack at -0.7..-1.1 A on the dock).
++			 */
++			rc = pps_usb_set(PPS_PROP_USB_INPUT_CURR_LIMIT,
++					 PPS_ICL_UNSUSPEND);
++			pr_info("erhai_pps: adapter online: real_type %d pps_type %d pps_max_curr %d vbus %d mV (icl was %d, unsuspend rc=%d)\n",
+ 				pps_usb_get(PPS_PROP_USB_REAL_TYPE),
+ 				pps_usb_get(PPS_PROP_USB_GET_PPS_TYPE),
+ 				pps_usb_get(PPS_PROP_USB_GET_PPS_MAX_CURR),
+-				p->vbus_mv);
++				p->vbus_mv, icl, rc);
+ 		}
+ 		if (!pps_deployable(p, &vooc))
+ 			return;

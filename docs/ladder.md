@@ -554,4 +554,25 @@ after a longer brick session. Two possible reasons, not yet told apart:
 suspend (ICL 0) that outlived the session. Vendor "unsuspend" writes ICL
 0xFFFFFFFF (adsp.c:6294), not 1.5 A.
 
+c4 build 5, same sequence (2026-10-22 23:38-23:46, 70 %):
+
+| Sequence on c4 build 5 | Anker watts | Battery current |
+|---|---|---|
+| Dock first after boot | 9-10 | +213 … +857 mA (6 samples) |
+| Anker direct (39 W, unplugged with the pump engaged), then dock | **2-3** | **−692 … −1126 mA: draining on the dock** |
+
+Cause (from the log): the unplug at t=252.6 dropped the pump, and the guard's
+buck resume (ICL 3000 mA) and the detach revert (ICL 1.5 A) both ran **after**
+the cable was gone. The ADSP appears to keep the last limit it took while
+attached (the pump's ICL 0), and the next charger inherited it. Every PPS
+session that ends by unplugging with the pump running would leave the next
+fixed-PD/5 V charger not charging. Blocks the PR.
+
+Fix, `0004` (build 6): at every plug-in, before anything else, write
+USB_INPUT_CURR_LIMIT = 0xFFFFFFFF (the vendor's unsuspend value,
+adsp.c:6294). The `adapter online` line now prints the limit the ADSP held
+(`icl was …`) and the write's rc. `pps_revert()` re-arms it for the next
+attached poll. Re-run: dock first, then Anker → dock, battery current
+positive both times.
+
 PR: _link_.
