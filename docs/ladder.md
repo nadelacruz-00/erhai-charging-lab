@@ -95,7 +95,32 @@ seen a 5 A cable. The unit is raw ADSP, so compare it against a known 3 A cable.
 
 | Run | Battery % | Engage (vbus/vbat/diff/ibus) | Drop (vbus/vbat/diff/ibus) | Anker watts |
 |---|---|---|---|---|
-| | | | | |
+| 1 (2026-10-22 17:40, Anker direct, `lab-00-cp-trace-2`) | 42-43 | 8043/3946/151/20 (trace, t=214.4 s) | 8006/3951/104/155 (t=215.1 s) | 17-18 |
+
+**c0 passes:** the trace captured 3 engages and 3 drops at a median 124 ms
+cadence (max 166 ms, so no poll slip; T10 is not needed). 1627 samples, saved at
+`~/c0-anker.trace`. Tracing went on after the plug-in, so the trace covers
+t=149-353 s. The first three engages (t=26-100 s) are in dmesg only.
+
+What the trace shows, with the pump engaged (18 samples):
+- REG_07 = 128 (CHG_EN latched) and REG_06 = 4 (CP switching bit set): **the
+  pump really was switching.**
+- **ibus 121-165 mA.** The pump carried almost nothing; ibat stayed at
+  3.0-3.2 A, the same as on the buck alone. Anker 17-18 W.
+- **diff 110-125 mV**, right on the 110 mV floor, then the drop at 104-106 mV.
+- **The bus never followed the voltage servo.** Every sample has the PPS
+  setpoint at the 9500 mV ceiling (the servo walked up there before the
+  trace started), yet ADSP vbus is 7953-8346 mV and chip vbus at most 8047 mV.
+  Input was about 2.2 A (17.5 W / 8.05 V), under the 3000 mA setpoint, so the
+  Anker was not current-limiting.
+
+The pump's ADCs read frozen values while it is off (chip vbus 7935 for 60 s,
+then 8006), so chip readings with `cp=0` are stale. Use them only while
+engaged.
+
+dmesg engages before the trace (poll 2000 ms): t=26.6 s diff 568 ibus 18 →
+drop 28.7 s (diff 62, ibus 18); 33.0 s diff 253 → held **55 s**, drop at
+diff 107, ibus 238; 90.5 s diff 186 → held 9 s, drop at diff 103, **ibus 555**.
 
 Seen before c0, package kernel `+b29`, 2026-10-22 16:57, Anker direct, 35 %:
 the pump engaged at 16:57:06 (`diff 653 mV`) and held for **6.5 minutes**
@@ -161,7 +186,16 @@ Verdict: vbus ≈ 8900 → Linux owns VBUS → branch (a). vbus ≈ 2×vbat → 
 
 | Battery % | ibus_master before the drop (mA) | Band | Conclusion |
 |---|---|---|---|
-| | | | |
+| 42-43 | 18-238, once 555 (6 drops) | < 500 (5 of 6) | the pump switched (REG_06 bit 2, REG_07 bit 7) but carried ~150 mA: diff sat at the 110 mV floor because VBUS stayed at ~8.05 V while the setpoint read 9500 |
+
+Lead for c3 (hypothesis): the first `SET_PPS_VOLT` write after entry sets
+the bus, and later writes do not move it. The code already says this for
+the ramp (`pps_start_volt_mv` comment: "the ADSP latches the PPS APDO range
+to the first 34 write"). Experiment 2a fits it too: an 8900 first write gave
+8.78 V; here an 8400 first write gave ~8.05 V and the walk to 9500 did
+nothing. The 16:57 session that held 6.5 min engaged at diff 653. If this
+holds, the pump needs a bigger diff at engage, and that has to come from
+the entry voltage.
 
 Bands: ≥ 2800 mA → the pump was delivering and software killed it; 500-2800 mA →
 conducting but current-limited (keep the ibus check, revisit `pps_cp_min_ibus_ma`);
@@ -190,7 +224,13 @@ with the dock plugged.
 
 | Dock plugged | ADSP USB_REAL_TYPE (prop 11) | GET_PPS_TYPE (prop 32) | VBUS (mV) |
 |---|---|---|---|
-| | | | |
+| Cygnett Unite 7-in-1, Anker upstream (2026-10-22 17:46:52, c0) | **6** (PD, fixed) | 0 | 4833 |
+
+The fixed-PD arming value is 6. The dock is at 5 V because nothing asks for
+more. This line does not show whether the dock offers 9 V; that still needs
+the Mac test or c2a's own readback (D12). Anker reading on the dock: 7-8 W.
+
+Params restored after c0 run 1: `pps_poll_ms=2000`, `pps_cp_feed_ms=500` (owner, 2026-10-22 17:46).
 
 Params restored or tablet rebooted: yes (2026-10-22, after Experiment 2a: unplug, 3000/3000/8400, then pps_cp_enable=Y; verified by readback)
 
@@ -198,9 +238,10 @@ Params restored or tablet rebooted: yes (2026-10-22, after Experiment 2a: unplug
 
 Cable label: **240 W** (2026-10-22, owner). The USB PD spec requires a
 5 A e-marker on every 240 W (EPR, 48 V × 5 A) cable, so this is a 5 A
-cable by its rating. Still to confirm: that the Anker detects it, from
-c0's `pps_max_curr` on the `adapter online` line. Until then the safety
-contract's 3000 mA rule stays.
+cable by its rating. **Confirmed by the source:** c0's `adapter online`
+line for the Anker direct reads `real_type 8 pps_type 1 pps_max_curr 5000`
+(2026-10-22 17:40:36). The Anker offers 5 A on this cable. c1.5 = **5 A**.
+The 3000 mA rule in the safety contract is lifted for this cable only.
 
 ## c2a — `10-pd9v`
 
