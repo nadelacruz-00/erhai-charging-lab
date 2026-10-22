@@ -201,6 +201,25 @@ Bands: ≥ 2800 mA → the pump was delivering and software killed it; 500-2800 
 conducting but current-limited (keep the ibus check, revisit `pps_cp_min_ibus_ma`);
 < 500 mA → the pump never conducted.
 
+### Experiment 3 — does the first voltage request set the bus? (c0 kernel, D13)
+
+Params only; currents stay at 3000 mA; the pump's own 110-700 mV window applies.
+
+1. Unplug everything. Battery below 75 %.
+2. `pps_target_volt_mv=8600`, `pps_poll_ms=100`, `pps_cp_feed_ms=100`; enable
+   and clear the trace **before** plugging in.
+3. Plug the Anker direct; 3 minutes; read the Anker's watts.
+4. Save the trace to `~/c0-exp3.trace`; restore `pps_target_volt_mv=8400`,
+   `pps_poll_ms=2000`, `pps_cp_feed_ms=500`; unplug.
+
+| Battery % | First request (mV) | ADSP vbus (mV) | diff at engage (mV) | ibus while engaged (mA) | Held | Anker watts |
+|---|---|---|---|---|---|---|
+| | 8600 | | | | | |
+
+Verdict: vbus lands near 8.6 V minus the same offset, and ibus rises well
+above 150 mA → the entry write sets the bus; c3 picks the entry voltage from
+2×vbat. vbus stays ~8.05 V → the bus is set elsewhere (record, rethink c3).
+
 ### Experiment 2b — VOOCPHY_ENABLE 1 vs 0 (c0 kernel)
 
 Same as 2a with `pps_voocphy_enable` = 1, then 0. Restore `pps_voocphy_enable=1`
