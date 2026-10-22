@@ -2,6 +2,25 @@
 
 ## Charging (erhai_pps / lab)
 
+### c3.5: drive the slave SC8547A in the PPS path (5 A, ~45 W)
+
+**What:** Run the slave pump in parallel with the master in `erhai_pps`'s pump path (the port's VOOC path already has slave engage/disengage), then retry 5000 mA.
+
+**Why:** At 3.76 A one pump already needs diff ~600 mV (c3 run 2b); 5 A extrapolates to ~800 mV, past the 700 mV drop line. Android's `virtual_cp` runs both SC8547A (docs/vendor-pps.md) and reaches 46-47 W screen off (c-1).
+
+**Context:** docs/ladder.md c3 run 2b; `sc8547a.c` slave section (`SC8547_SLAVE_ENGAGE_IBUS_MA`, `slave_settle_ms`).
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** c4 merged
+
+### Open questions from the c3 runs
+
+- Anker display vs trace: run 2 showed 32-33 W where ibus × set ≈ 27.5 W (run 1b agreed at 28 W). Check the pump's ibus ADC scale against a USB-C meter.
+- One plug-in took 2 min 48 s to report PD_PPS (`real_type 0` first) after a quick re-plug (Experiment 5). Watch for a repeat in daily use.
+- The engine still writes props 49/40/39 on entry; Android does not on this path (docs/vendor-pps.md). Try `pps_voocphy_enable=0 pps_cp_init=0` and compare.
+- Dock 9 V question (D12) is still open: the Mac + dock + Anker watts test, or c2a's own readback.
+
 ### Cache the battery power_supply lookup in erhai_pps
 
 **What:** Resolve `pps_bat_psy()` once (cache the `struct power_supply *`, drop the per-call `power_supply_get_by_name` / put pair).

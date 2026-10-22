@@ -515,4 +515,28 @@ unloaded case.
 
 ## c4 — `30-pr-final`
 
-24 h daily use, both setups: _notes_. PR: _link_.
+Decision D18 (2026-10-22): lock in the 39 W setup; the second pump becomes
+its own later rung (c3.5). Patches: `0001` (c0 trace), `0002` (c3 pump
+controller, build 4) and `0003`:
+- **Defaults:** `pps_target_curr_ma` and `pps_max_curr_ma` 3000 → 4000,
+  `pps_cp_max_volt_mv` 9500 → 9900 (runs 2b).
+- **Adapter cap (new safeguard):** at negotiate, the target becomes
+  min(target, max, the adapter's own PPS max current from prop 36). An adapter
+  offers more than 3 A only when it sees a 5 A e-marked cable, so a 3 A cable
+  stays at 3 A without any setting. If prop 36 reads ≤ 0, `pps_cable_safe_ma`
+  (3000) applies. The vendor caps by the adapter's max too (pps.c:1735-1774).
+  New log line: `PPS current target … (adapter offers …)`.
+
+Checks before the PR:
+
+| Check | Result |
+|---|---|
+| Anker direct, defaults: target 4000 (adapter offers 5000), ~39 W, pump held | |
+| A 3 A (non-e-marked) cable, if one is around: target capped at 3000 | |
+| 100 W brick direct: identifies, pump engages, watts | |
+| Dock (Anker upstream): unchanged 7-9 W, no pump, DP + USB fine | |
+| Unplug mid-charge, replug: clean exit, re-engage | |
+| 80 %: exits PPS (`soc-limit`) cleanly | |
+| 24 h daily use, both setups: no hangs, no stuck buck-off (`grep backstop`) | |
+
+PR: _link_.
