@@ -539,4 +539,19 @@ Checks before the PR:
 | 80 %: exits PPS (`soc-limit`) cleanly | |
 | 24 h daily use, both setups: no hangs, no stuck buck-off (`grep backstop`) | |
 
+Dock baseline on the package kernel `b29` (2026-10-22 23:28-23:36, 70 %,
+Anker → dock, keyboard + HDMI monitor attached, HDMI not working):
+
+| Sequence on b29 | Anker watts | Battery current |
+|---|---|---|
+| Dock first after boot | 9-10 | +883 mA |
+| Anker direct ~25 s (PPS session, exit by detach at t=605), then dock | 6-8 | +286 mA |
+
+So on the stock code, a PPS session's exit already lowers the next dock plug
+(the revert writes ICL 1.5 A, CHG_CTRL_LIM 0, … at detach). c4 showed 2-3 W
+after a longer brick session. Two possible reasons, not yet told apart:
+(a) the same revert effect, stronger; (b) a c3-only leftover, e.g. a buck
+suspend (ICL 0) that outlived the session. Vendor "unsuspend" writes ICL
+0xFFFFFFFF (adsp.c:6294), not 1.5 A.
+
 PR: _link_.
