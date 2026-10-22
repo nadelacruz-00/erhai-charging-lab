@@ -611,4 +611,14 @@ session (revert ICL 1.5 A).
 Fix, `0006` (local, not pushed until the dock test passes): the buck resume
 and the revert write 0xFFFFFFFF instead of 3000 mA / 1.5 A.
 
+**Build 7 dock test** (2026-10-23 00:5x, 69 %): Anker direct at 39 W with the
+pump engaged, unplug, dock → **6-8 W, pack +0.12…+0.29 A** (build 5:
+−0.7…−1.1 A). The plug-in unsuspend (0004) works; the result equals b29
+after a session. `adapter online … icl was 1400000` (the first plug of the
+boot read `icl was 2000000`), so the dock inherits the revert's 1.5 A limit.
+Hand tests with the dock attached: `5 2000000 0x33` → no change (6-8 W); dock
+replug → `icl was 1400000` again, 6-8 W. A plain limit written while
+attached is neither applied nor stored, but the revert's 1.5 A (written
+after the detach) was.
+
 PR: _link_.
