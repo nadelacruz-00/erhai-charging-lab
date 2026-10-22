@@ -2,6 +2,7 @@
 """fetch: SHA256SUMS and asset verification."""
 
 import hashlib
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -102,6 +103,41 @@ class ReleaseAssets(unittest.TestCase):
     def test_missing_release_refuses(self):
         with self.assertRaisesRegex(lab.LabError, "not found"):
             lab.release_assets([], "lab-00-cp-trace-9")
+
+
+class FindRelease(unittest.TestCase):
+    TAGGED = {"tag_name": "lab-30-pr-final-7",
+              "assets": [{"name": "SHA256SUMS", "browser_download_url": "u"}]}
+
+    def fake_get(self, listing):
+        calls = []
+
+        def get(url):
+            calls.append(url)
+            if url.endswith("/releases?per_page=100"):
+                return json.dumps(listing).encode()
+            if url.endswith("/releases/tags/lab-30-pr-final-7"):
+                return json.dumps(self.TAGGED).encode()
+            raise lab.LabError(f"GET {url}: HTTP 404 Not Found")
+        return get, calls
+
+    def test_latest_from_the_list(self):
+        get, calls = self.fake_get([self.TAGGED])
+        tag, assets = lab.find_release("r", "30-pr-final", None, get)
+        self.assertEqual(tag, "lab-30-pr-final-7")
+        self.assertEqual(assets, [("SHA256SUMS", "u")])
+        self.assertEqual(len(calls), 1)
+
+    def test_empty_list_with_tag_falls_back_to_by_tag(self):
+        get, calls = self.fake_get([])
+        tag, assets = lab.find_release("r", "30-pr-final", "lab-30-pr-final-7", get)
+        self.assertEqual(assets, [("SHA256SUMS", "u")])
+        self.assertTrue(calls[-1].endswith("/releases/tags/lab-30-pr-final-7"))
+
+    def test_empty_list_without_tag_asks_for_one(self):
+        get, _ = self.fake_get([])
+        with self.assertRaisesRegex(lab.LabError, "--tag"):
+            lab.find_release("r", "30-pr-final", None, get)
 
 
 class LatestTag(unittest.TestCase):

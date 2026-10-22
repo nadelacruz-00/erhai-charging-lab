@@ -184,10 +184,27 @@ def install_assets(assets: Assets, boot_dir: Path = BOOT_DIR,
     subprocess.run(["depmod", "-a", assets.kver], check=True)
 
 
+def find_release(repo: str, candidate: str, tag: str | None,
+                 get=http_get) -> tuple[str, list[tuple[str, str]]]:
+    """(tag, assets) of the requested or latest release of `candidate`.
+
+    The anonymous release list can come back empty while the releases exist
+    (seen 2026-10-23: the list returned [] and /releases/tags/<tag> answered),
+    so an explicit tag missing from the list is looked up by tag.
+    """
+    releases = json.loads(get(f"{API}/repos/{repo}/releases?per_page=100"))
+    if not tag:
+        if not releases:
+            raise LabError("GitHub returned an empty release list; pass "
+                           f"--tag lab-{candidate}-<run> (see the repo's Releases page)")
+        tag = latest_tag([r["tag_name"] for r in releases], candidate)
+    if not any(r.get("tag_name") == tag for r in releases):
+        releases = [json.loads(get(f"{API}/repos/{repo}/releases/tags/{tag}"))]
+    return tag, release_assets(releases, tag)
+
+
 def cmd_fetch(args: argparse.Namespace) -> int:
-    releases = json.loads(http_get(f"{API}/repos/{args.repo}/releases?per_page=100"))
-    tag = args.tag or latest_tag([r["tag_name"] for r in releases], args.candidate)
-    assets_list = release_assets(releases, tag)
+    tag, assets_list = find_release(args.repo, args.candidate, args.tag)
     with tempfile.TemporaryDirectory(prefix="erhai-lab-fetch-") as tmp:
         d = Path(tmp)
         for name, url in assets_list:
