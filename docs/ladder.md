@@ -81,7 +81,19 @@ Pass: one pump engage captured in `/sys/kernel/tracing/trace` at
 
 | Battery % | vbus (mV) | vbat (mV) | 2×vbat (mV) | Verdict |
 |---|---|---|---|---|
-| | | | | |
+| 67 | 8702-8792 (steady ~8780 for 2 min) | 4190-4208 | ~8400 | **Linux owns VBUS → branch (a)** |
+
+Run 2026-10-22 13:23 (package kernel `+b29`, Anker 737 direct, dock out,
+34 °C). Requested 8900 mV / 4000 mA with `pps_cp_enable=0`; VBUS followed the
+request to within ~120 mV and sat ~380 mV above 2×vbat. Experiment 2b is not
+needed. The earlier ~8.2 V "ADSP settle" (requested 8400 mV with PPS current
+= ICL = 3000 mA) was the source sitting at its own current limit.
+
+Side observation, same run: Anker display **18.2 W** versus 24-25 W at the
+default 3000/3000; tablet log agrees (ibat ~2.7 A here vs ~4.3 A before), so
+input was ~2.1 A at 8.78 V instead of ~3 A at 8.2 V. The input limit the ADSP
+applied is not readable without root. Open question for c0's trace: is the
+buck input capped near 2 A whenever the source is not current-limiting?
 
 Verdict: vbus ≈ 8900 → Linux owns VBUS → branch (a). vbus ≈ 2×vbat → run 2b.
 
@@ -114,7 +126,7 @@ branch (a). Follows with neither → record; branch (b) with the lift-timeout fa
 |---|---|---|
 | | | |
 
-Params restored or tablet rebooted: _yes/no_
+Params restored or tablet rebooted: yes (2026-10-22, after Experiment 2a: unplug, 3000/3000/8400, then pps_cp_enable=Y; verified by readback)
 
 ## c1.5 — cable rating
 
