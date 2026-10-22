@@ -575,4 +575,23 @@ adsp.c:6294). The `adapter online` line now prints the limit the ADSP held
 attached poll. Re-run: dock first, then Anker → dock, battery current
 positive both times.
 
+**Bypass charging broken by c3** (owner, 2026-10-22 23:48, c4 build 5,
+71 %): with the desktop's bypass switch ON, the pack still took **+7.2 A**,
+39 W on the Anker. The switch (`/usr/local/sbin/erhai-bypass-charge.sh`, from
+`oneplus-erhai-desktop`) holds the pack by writing BATT_CHG_EN=0 through
+`/sys/kernel/debug/erhai_otg/cmd`. That stops only the ADSP's own charger. Its
+header relies on "a PD/PPS-only source owns no SC8547A session", which c3
+made untrue: the pump feeds the cell directly. Also, at negotiate and in the
+revert, `erhai_pps` writes BATT_CHG_EN=1 (since before this lab) and undoes the inhibit
+until the helper re-asserts it (≤ 10 s).
+
+Fix, `0005`: `erhai_otg_glink` remembers the last BATT_CHG_EN written through
+its cmd knob and exports `erhai_otg_charge_inhibited()` (that, or the
+max_soc limit holding). While it is true, `erhai_pps` keeps the pump off
+and the buck on, so the ADSP inhibit holds the pack. Negotiate and revert
+write BATT_CHG_EN = 0 instead of 1. New log lines: `charging inhibited by
+policy - pump off, buck holds the pack` / `charge inhibit released`.
+Re-test: bypass ON with the Anker direct → pack ~0 A, Anker watts ≈ system
+load; bypass OFF → pump back, ~39 W.
+
 PR: _link_.

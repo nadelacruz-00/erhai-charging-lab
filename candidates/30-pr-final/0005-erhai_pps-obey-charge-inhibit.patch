@@ -1,0 +1,115 @@
+diff --color -ruN c5/drivers/power/supply/erhai_otg_glink.c c6/drivers/power/supply/erhai_otg_glink.c
+--- c5/drivers/power/supply/erhai_otg_glink.c	2026-10-22 23:44:40.218588777 +0800
++++ c6/drivers/power/supply/erhai_otg_glink.c	2026-10-22 23:52:07.919393151 +0800
+@@ -810,6 +810,28 @@
+ }
+ EXPORT_SYMBOL_GPL(erhai_otg_adsp_prop_get);
+ 
++/*
++ * Last BATT_CHG_EN that userspace policy asked for through the debugfs cmd
++ * knob (the desktop's bypass-charging switch writes "24 0 0x31"); true =
++ * inhibit.  erhai_pps's own BATT_CHG_EN writes do not go through the knob.
++ */
++static bool erhai_otg_cmd_inhibit;
++
++/*
++ * Is charging inhibited by policy: the max_soc limit holding, or a userspace
++ * BATT_CHG_EN=0?  The ADSP inhibit only stops the ADSP's own charger, so a
++ * driver that feeds the pack another way (the SC8547A pump under erhai_pps)
++ * must stand down while this is true.
++ */
++bool erhai_otg_charge_inhibited(void)
++{
++	struct erhai_otg *otg = erhai_otg_glink_dev;
++
++	return READ_ONCE(erhai_otg_cmd_inhibit) ||
++	       (otg && READ_ONCE(otg->chglim_state) == 1);
++}
++EXPORT_SYMBOL_GPL(erhai_otg_charge_inhibited);
++
+ int erhai_otg_adsp_prop_set(u32 opcode, u32 property, u32 value)
+ {
+ 	if (!erhai_otg_glink_dev)
+@@ -1386,6 +1408,9 @@
+ 	if (ret < 0)
+ 		return ret;
+ 
++	if (opcode == BC_BATTERY_PROPERTY_SET && property == BATT_CHG_EN)
++		WRITE_ONCE(erhai_otg_cmd_inhibit, value == 0);
++
+ 	/*
+ 	 * Keep the kernel's armed flag coherent with manual userspace
+ 	 * re-arms/disarms, otherwise a later drd-sync disarm happily kills a
+diff --color -ruN c5/drivers/power/supply/erhai_otg_glink.h c6/drivers/power/supply/erhai_otg_glink.h
+--- c5/drivers/power/supply/erhai_otg_glink.h	2026-10-22 23:44:40.218607787 +0800
++++ c6/drivers/power/supply/erhai_otg_glink.h	2026-10-22 23:52:07.919464343 +0800
+@@ -36,6 +36,7 @@
+  */
+ int erhai_otg_adsp_prop_get(u32 opcode, u32 property);
+ int erhai_otg_adsp_prop_set(u32 opcode, u32 property, u32 value);
++bool erhai_otg_charge_inhibited(void);
+ #else
+ static inline int erhai_otg_adsp_usb_prop(u32 property)
+ {
+@@ -45,6 +46,10 @@
+ {
+ 	return -ENODEV;
+ }
++static inline bool erhai_otg_charge_inhibited(void)
++{
++	return false;
++}
+ static inline int erhai_otg_adsp_prop_set(u32 opcode, u32 property, u32 value)
+ {
+ 	return -ENODEV;
+diff --color -ruN c5/drivers/power/supply/erhai_pps.c c6/drivers/power/supply/erhai_pps.c
+--- c5/drivers/power/supply/erhai_pps.c	2026-10-22 23:45:15.636849358 +0800
++++ c6/drivers/power/supply/erhai_pps.c	2026-10-22 23:52:07.919666253 +0800
+@@ -430,6 +430,7 @@
+ 	unsigned long		cp_engaged_since;
+ 	unsigned int		cp_low_cnt;	/* consecutive low-ibus polls */
+ 	unsigned long		cp_fed_at;	/* last successful feed */
++	bool			inhibit_held;	/* policy inhibit seen this session */
+ 	unsigned int		cp_rearms;	/* pump attempts this plug */
+ };
+ 
+@@ -633,7 +634,9 @@
+ 	rc = pps_batt_set(PPS_PROP_BATT_CHG_CTRL_LIM, 0);
+ 	if (rc)
+ 		pps_prop_err(p, "revert CHG_CTRL_LIM", rc);
+-	rc = pps_batt_set(PPS_PROP_BATT_CHG_EN, 1);
++	/* re-enable charging only when no policy holds the pack (bypass
++	 * switch, max_soc): this write must not undo the user's inhibit */
++	rc = pps_batt_set(PPS_PROP_BATT_CHG_EN, erhai_otg_charge_inhibited() ? 0 : 1);
+ 	if (rc)
+ 		pps_prop_err(p, "revert CHG_EN", rc);
+ 	rc = pps_usb_set(PPS_PROP_USB_INPUT_CURR_LIMIT, 1500000);
+@@ -966,7 +969,8 @@
+ 		rc = pps_batt_set(PPS_PROP_BATT_AP_FASTCHG_ALLOW, 1);
+ 		if (rc)
+ 			goto fail;
+-		rc = pps_batt_set(PPS_PROP_BATT_CHG_EN, 1);
++		rc = pps_batt_set(PPS_PROP_BATT_CHG_EN,
++				  erhai_otg_charge_inhibited() ? 0 : 1);
+ 		if (rc)
+ 			goto fail;
+ 		rc = pps_batt_set(PPS_PROP_BATT_CHG_CTRL_LIM, pps_fcc_ma * 1000);
+@@ -1128,7 +1132,17 @@
+ 		 * the pump via pps_exit BEFORE the 5 V revert.  Pump off at runtime
+ 		 * (pps_cp_enable=0) or the API gone: hand back to the buck.
+ 		 */
+-		if (pps_cp_enable) {
++		if (erhai_otg_charge_inhibited()) {
++			/* bypass / max_soc: the pump would charge straight
++			 * through the ADSP inhibit; the buck obeys it */
++			if (!p->inhibit_held)
++				pr_info("erhai_pps: charging inhibited by policy - pump off, buck holds the pack\n");
++			p->inhibit_held = true;
++			rc = pps_cp_release(p, "inhibited", false);
++		} else if (pps_cp_enable) {
++			if (p->inhibit_held)
++				pr_info("erhai_pps: charge inhibit released - pump allowed\n");
++			p->inhibit_held = false;
+ 			rc = pps_cp_step(p);
+ 		} else {
+ 			rc = pps_cp_release(p, "disabled", false);
