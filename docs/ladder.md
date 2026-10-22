@@ -39,7 +39,7 @@ Design and eng review: `~/.gstack/projects/charging-fixes/nadelacruz-unknown-des
 | Port tree | `TheMojoMan/oneplus-erhai-linux` @ `candidates/BASE_SHA` (`74ba8ddb4`, 7.3-rc5) |
 | Package kernel | `7.3.0-rc5-sm8750-themojoman+b29` |
 | Charger | Anker 737 PowerCore 24K (PD 3.1, PPS) |
-| Dock | _model:_ |
+| Dock | Cygnett Unite 7-in-1 USB-C Hub (single HDMI) |
 | Cable brick→tablet | _rating: unknown until c-1 / c1.5_ |
 
 ## c-1 — Android ground truth (no Linux code)
@@ -48,8 +48,27 @@ Boot Android. Battery below 75 %. Same Anker, same cable, same dock.
 
 | Setup | Battery % | Anker watts | VBUS (mV) | IBUS (mA) | Source of VBUS/IBUS |
 |---|---|---|---|---|---|
-| Android, through the dock | | | | | |
-| Android, direct | | | | | |
+| Android, through the dock | 33 → 33 | 8-9 | not read | not read | — |
+| Android, direct, screen on | 33 → 36 (both direct runs) | 35-36 | not read | not read | — |
+| Android, direct, screen off | (see above) | 46-47 | not read | not read | — |
+
+Run 2026-10-22 (Android, same Anker 737, same cable, same dock, about 2 min
+per setup). Watts are the Anker's display, so the dock row includes the dock's
+own draw (hub + HDMI). 33 → 33 over 2 minutes does not prove zero net charge:
+1 % of this pack takes several minutes even at 5 W net.
+
+Result for the dock: **Android gets the same 8-9 W as Linux.** Neither of the
+ladder's two outcomes was this one. The dock's 18 W target came from vendor
+source (9 V × `pd-iclmax` 2000), not from a measurement on this dock with this
+Anker, and Android does not reach it. Before c2a is written, the open question
+is whether the dock offers the tablet anything above 5 V with the Anker
+upstream.
+
+Result for direct: the fair Linux comparison is screen on, **35-36 W on Android
+vs 24-25 W on Linux**; the ceiling is 46-47 W screen off. 46-47 W through a
+2:1 pump (VBUS_OVP 10 V) means more than 4.6 A on the bus, which a PD source
+only gives over a 5 A e-marked cable. That points to a 5 A cable but is not
+the c1.5 measurement: the bus voltage was not read.
 
 Decision: if Android through the dock is well above 27 W, premise 1 (dock =
 fixed 9 V at most) is wrong and the fixed-PD design is re-derived first. If
