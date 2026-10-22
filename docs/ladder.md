@@ -98,12 +98,14 @@ seen a 5 A cable. The unit is raw ADSP, so compare it against a known 3 A cable.
 | | | | | |
 
 Seen before c0, package kernel `+b29`, 2026-10-22 16:57, Anker direct, 35 %:
-the pump engaged at `diff 653 mV` and stayed engaged for 3+ minutes with no
-drop line. The polls ran at 500 ms, which is `pps_cp_feed_ms` and is used only
-while the engine counts the pump as engaged. The input meanwhile was 8.01-8.06 V
-at the 3000 mA PPS setpoint, about 24 W. So at default
-settings the 24-25 W ceiling is the 3 A request, with or without the pump.
-Whether the pump was actually switching (ibus) is what c0 shows.
+the pump engaged at 16:57:06 (`diff 653 mV`) and held for **6.5 minutes**
+(the engine polled at the 500 ms `pps_cp_feed_ms` the whole time, which it
+uses only while the pump counts as engaged). It dropped at 17:03:32 at
+`diff 52 mV` (floor 110). VBUS was 8.01-8.06 V at the 3000 mA PPS setpoint,
+ibat ~4.2-4.3 A with the pump engaged; at 17:07, on the buck path, ibat was
+2.36 A at 38 %. The Anker showed **17-18 W** when read around 17:05, after
+the drop. Bus current was not measured. The 3000 mA is a setpoint, not a
+reading. Whether the pump was switching (ibus) is what c0 shows.
 
 ## c1 — experiments (params only)
 
@@ -176,7 +178,11 @@ Params restored or tablet rebooted: yes (2026-10-22, after Experiment 2a: unplug
 
 ## c1.5 — cable rating
 
-_3 A / 5 A, and how it was established:_
+Cable label: **240 W** (2026-10-22, owner). The USB PD spec requires a
+5 A e-marker on every 240 W (EPR, 48 V × 5 A) cable, so this is a 5 A
+cable by its rating. Still to confirm: that the Anker detects it, from
+c0's `pps_max_curr` on the `adapter online` line. Until then the safety
+contract's 3000 mA rule stays.
 
 ## c2a — `10-pd9v`
 
