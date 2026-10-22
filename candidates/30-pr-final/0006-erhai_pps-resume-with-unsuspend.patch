@@ -1,0 +1,35 @@
+diff --color -ruN c6/drivers/power/supply/erhai_pps.c c7/drivers/power/supply/erhai_pps.c
+--- c6/drivers/power/supply/erhai_pps.c	2026-10-23 00:44:23.248797047 +0800
++++ c7/drivers/power/supply/erhai_pps.c	2026-10-23 00:44:23.269075166 +0800
+@@ -639,7 +639,10 @@
+ 	rc = pps_batt_set(PPS_PROP_BATT_CHG_EN, erhai_otg_charge_inhibited() ? 0 : 1);
+ 	if (rc)
+ 		pps_prop_err(p, "revert CHG_EN", rc);
+-	rc = pps_usb_set(PPS_PROP_USB_INPUT_CURR_LIMIT, 1500000);
++	/* unsuspend, not a number: the ADSP takes 0 as "suspend input" and only
++	 * the vendor's 0xFFFFFFFF releases it; a plain limit written after a
++	 * suspend leaves the input suspended (lab, c4 build 7 bypass test) */
++	rc = pps_usb_set(PPS_PROP_USB_INPUT_CURR_LIMIT, PPS_ICL_UNSUSPEND);
+ 	if (rc)
+ 		pps_prop_err(p, "revert ICL", rc);
+ 	rc = pps_usb_set(PPS_PROP_USB_PPS_VOOCPHY_ENABLE, 0);
+@@ -711,7 +714,9 @@
+ }
+ 
+ /* buck input suspend for the pump (vendor WIRED_CHARGE_SUSPEND -> ICL 0,
+- * adsp.c:6294); resume writes back the session's ICL */
++ * adsp.c:6294); resume writes the vendor's unsuspend value, 0xFFFFFFFF:
++ * after a 0 the ADSP ignores an ordinary limit (lab, c4 build 7: input stuck
++ * at 0.1 W after "ICL 3000000"; 0xFFFFFFFF released it at once) */
+ static int pps_buck_set(struct erhai_pps *p, bool off)
+ {
+ 	int rc;
+@@ -719,7 +724,7 @@
+ 	if (p->buck_off == off)
+ 		return 0;
+ 	rc = pps_usb_set(PPS_PROP_USB_INPUT_CURR_LIMIT,
+-			 off ? 0 : pps_iclim_ma * 1000);
++			 off ? 0 : PPS_ICL_UNSUSPEND);
+ 	if (rc) {
+ 		pr_warn("erhai_pps: buck %s failed rc=%d\n",
+ 			off ? "suspend" : "resume", rc);

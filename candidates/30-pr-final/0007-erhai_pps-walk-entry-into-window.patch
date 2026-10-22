@@ -1,0 +1,26 @@
+diff --color -ruN c7/drivers/power/supply/erhai_pps.c c8/drivers/power/supply/erhai_pps.c
+--- c7/drivers/power/supply/erhai_pps.c	2026-10-23 00:44:23.269075166 +0800
++++ c8/drivers/power/supply/erhai_pps.c	2026-10-23 00:48:35.090458616 +0800
+@@ -858,6 +858,22 @@
+ 					 p->set_volt_mv);
+ 		return 0;
+ 	}
++	/*
++	 * Not in the pump's window yet: walk the request toward it, as the
++	 * vendor does (pps.c:2020-2035), instead of waiting on one shot.  The
++	 * unloaded bus overshoots the request by up to ~250 mV (c4 build 7:
++	 * diff 708-783 mV for a 2*vbat + 450 request, 5 timeouts in a row).
++	 */
++	if (rc == -EAGAIN) {
++		nv = p->set_volt_mv;
++		if (diff > (int)pps_cp_diff_max_mv)
++			nv -= pps_cp_vstep_over_mv;
++		else if (diff < (int)pps_cp_entry_margin_mv / 2)
++			nv += pps_cp_vstep_over_mv;
++		nv = clamp_t(unsigned int, nv, cvbat * 2 + 100, pps_cp_max_volt_mv);
++		if (nv != p->set_volt_mv && pps_pdo_set(p, nv, target))
++			return -EIO;
++	}
+ 	if (time_after_eq(jiffies, p->cp_lift_since +
+ 			  msecs_to_jiffies(pps_cp_lift_ms))) {
+ 		pr_info("erhai_pps: CP entry timed out (diff %d mV, engage rc=%d)\n",

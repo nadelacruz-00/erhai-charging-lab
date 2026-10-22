@@ -20,6 +20,7 @@
 - One plug-in took 2 min 48 s to report PD_PPS (`real_type 0` first) after a quick re-plug (Experiment 5). Watch for a repeat in daily use.
 - The engine still writes props 49/40/39 on entry; Android does not on this path (docs/vendor-pps.md). Try `pps_voocphy_enable=0 pps_cp_init=0` and compare.
 - 100 W brick, c4 build 5: one pump stop mid-charge (diff 1546 mV, ibus 22 mA at the drop, setpoint 9840): the pump quit carrying current before the feed noticed. The guard recovered it. Catch the next one with the trace on (REG_06/REG_07 before the drop) to see whether it is the chip's own protection.
+- Dock after a PPS session charges at ~1.4 A input limit (6-8 W) instead of the boot's 2.0 A (9-10 W); stock b29 does the same. ICL writes with the dock attached or with no cable are not applied or stored (ladder, c4 build 7). Candidates: the revert's other writes (CHG_CTRL_LIM 0, FASTCHG_ALLOW 0, MOS_CTRL 0, VOOCPHY 0) or the ADSP's own input-limit result.
 - Dock 9 V question (D12) is still open: the Mac + dock + Anker watts test, or c2a's own readback.
 
 ### Cache the battery power_supply lookup in erhai_pps

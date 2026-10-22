@@ -621,4 +621,23 @@ replug → `icl was 1400000` again, 6-8 W. A plain limit written while
 attached is neither applied nor stored, but the revert's 1.5 A (written
 after the detach) was.
 
+No-cable write test: dock unplugged, `5 2000000 0x33`, dock replugged →
+`icl was 1400000`, 6-8 W. A limit written with no cable attached is not
+stored either, so the 1.4 A does not come from the revert's ICL write. Its source
+is not found. **Decision (owner's stop rule, 2026-10-23):** the dock after a PPS
+session ships at stock b29 level (6-8 W, pack charging). It is not a
+regression; it goes in TODOS as a known issue.
+
+Final build = `0001`…`0007`: `0006` (resume and revert write the unsuspend
+0xFFFFFFFF) and `0007` (the pump entry walks the request into the 110-700 mV
+window, 100 mV per poll). Both were written after the hand tests above and
+checked to rebuild the exact tested tree. Final checks on that build:
+
+| Final check | Result |
+|---|---|
+| Bypass on → off → on → off, never unplugged: on holds the pack (never 0.1 W), off ≈ 39 W | |
+| Pump entry engages on the first attempt (no `entry timed out`) | |
+| Anker session, unplug, dock: charging (≥ 6-8 W, pack > 0) | |
+| Anker direct default ≈ 39 W; replug; 80 % `soc-limit` exit clean | |
+
 PR: _link_.
