@@ -19,8 +19,10 @@ Design and eng review: `~/.gstack/projects/charging-fixes/nadelacruz-unknown-des
   param; a reboot restores all of them. The restore order below still applies
   without a reboot.
 - **Never re-enable the charge pump (`pps_cp_enable=1`) while
-  `pps_max_curr_ma` or `pps_target_curr_ma` is above 3000.** The cable rating
-  is unknown until c1.5.
+  `pps_max_curr_ma` or `pps_target_curr_ma` is above 3000**, except with the
+  240 W cable (5 A, confirmed in c1.5). Any other cable gets its own c1.5 first.
+- Above 3000 mA, raise the current in one step per run (4000, then 5000)
+  and stop the run if the pack goes above 45 °C.
 - Charging stops at 80 % by design (`erhai_otg_glink` `max_soc=80`). Every
   measurement below needs the battery **below 75 %**.
 
@@ -409,9 +411,38 @@ The 3000 mA rule in the safety contract is lifted for this cable only.
 
 ## c3 — `20-cp-current-ladder`
 
-| Cable | Branch | Pump held (min) | Pack (mA) | Anker watts | Exits clean (80 %, unplug) |
-|---|---|---|---|---|---|
-| | | | | | |
+Patches: `0001` (c0, unchanged) + `0002` (the pump controller, D16). It
+follows Android's recipe from `docs/vendor-pps.md`:
+- **Start:** once the PPS current is at its target, suspend the buck
+  (ICL 0), request 2×vbat + 450 mV (prop 34, then prop 35), and engage when
+  the window opens. Allow `pps_cp_lift_ms` 5000.
+- **While engaged:** feed every 300 ms. Servo the PPS voltage on the pump's
+  ibus: +40 mV below target − 100 mA, −40 mV above target + 100 mA, −100 mV
+  above target + 500 mA. Never step up at diff ≥ 650 mV, and step down while
+  ibat > 9000 mA. Every voltage change is a 34 + 35 pair.
+- **The guard:** a drop, a failed entry, a failed pump ADC read, 4 polls
+  under 300 mA (after a 2 s settle), taper, or `pps_cp_enable=0` all resume the
+  buck in the same poll. Each counted stop holds off 10 s; 5 attempts per plug.
+- **The pump ADC stays on** for the whole session (the Experiment 4 bug).
+- Defaults ship at 3000 mA. New params: `pps_cp_buck_suspend`,
+  `pps_cp_entry_margin_mv`, `pps_cp_lift_ms`, `pps_cp_rearm_ms`,
+  `pps_cp_rearm_max`, `pps_cp_vstep_over_mv`, `pps_cp_ibus_band_ma`,
+  `pps_cp_diff_max_mv`, `pps_cp_ibat_max_ma`, `pps_cp_min_ibus_ma`,
+  `pps_cp_settle_ms`. Gone: `pps_cp_target_mv`, `pps_cp_min_volt_mv`.
+  Changed defaults: `pps_cp_vstep_mv` 50 → 40, `pps_cp_feed_ms` 500 → 300.
+
+Runs: (1) defaults (3000 mA); (2) `pps_target_curr_ma` and `pps_max_curr_ma`
+= 4000; (3) 5000. Each: Anker direct, trace on before the plug, 3 minutes,
+Anker watts, save the trace. Restore to 3000 after each run.
+
+Pass: the pump holds for the whole run, ibus within 100 mA of the target, the
+Anker reads about target × ~8.2 V, and no buck-off sample without the pump engaged
+beyond the 5 s entry. Open question the trace answers: does the bus follow
+34 + 35 pairs after entry (set vs ADSP vbus)?
+
+| Run | Target (mA) | Pump held (min) | ibus (mA) | Pack (mA) | Anker watts | Exits clean (80 %, unplug) |
+|---|---|---|---|---|---|---|
+| | | | | | | |
 
 ## c4 — `30-pr-final`
 
