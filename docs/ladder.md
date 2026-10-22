@@ -214,9 +214,36 @@ Params only; currents stay at 3000 mA; the pump's own 110-700 mV window applies.
 
 | Battery % | First request (mV) | ADSP vbus (mV) | diff at engage (mV) | ibus while engaged (mA) | Held | Anker watts |
 |---|---|---|---|---|---|---|
-| | 8600 | | | | | |
+| 43-44 | 8600 | 8578-8647 before load; ~8.05 V with the pump on; 7.0-7.7 V on the buck after | 693, then 512 | 429-496 for ~0.5 s during the current ramp, then 18 (the ADC's idle value) | 6 s (747.8-753.9) | **24-26 W from ~1:20, steady** |
 
-Verdict: vbus lands near 8.6 V minus the same offset, and ibus rises well
+Run 2026-10-22 17:52, c0 kernel, trace `~/c0-exp3.trace` (t=720-853 s). Params
+restored by the owner and checked by readback (8400 / 2000 / 500).
+
+What it shows:
+1. **The entry write sets the bus with no load:** 8600 requested → 8.58-8.65 V
+   before charging started. That also explains c0 run 1 (8400 first →
+   ~8.05 V at the tablet at 2.2 A).
+2. **Under load the Anker current-limits at the 3000 mA setpoint.** After the
+   drop, VBUS sat at 7.0-7.7 V while the setpoint read 9500, and the Anker
+   showed 24-26 W (about 3.1-3.4 A at its output). A PPS source in current
+   limit lets its voltage sag to whatever the load holds it at.
+3. **The buck takes the whole 3 A, so the pump gets none.** The pump and the
+   buck share one 3 A supply. The buck's input limit (`pps_iclim_ma`) is
+   also 3000, so it absorbs all of it; the bus sags until the pump's share is zero
+   (diff ~120 mV, ibus 18 mA, REG_06/07 still say switching). The only pump
+   current seen (~430-500 mA) came while the setpoint was still ramping.
+4. **Run 1's 17-18 W vs today's 24-26 W is the buck's input current**
+   (ibat ~2.8 A vs ~4.0 A). Run 1 never hit the 3 A limit (2.2 A at 8.05 V);
+   this run did. Why the buck settled at ~2.2 A in run 1 and ~3 A here is not
+   known; both sessions had `pps_iclim_ma=3000`.
+
+Verdict: the bus starts at the entry request, and under load the source's
+current limit sets it. The pump can only carry current the buck leaves
+over. So **the pump needs the source limit above the buck's input limit**:
+either a lower `pps_iclim_ma` or a higher PPS current (5 A now confirmed for
+this cable).
+
+Original verdict rule: vbus lands near 8.6 V minus the same offset, and ibus rises well
 above 150 mA → the entry write sets the bus; c3 picks the entry voltage from
 2×vbat. vbus stays ~8.05 V → the bus is set elsewhere (record, rethink c3).
 
