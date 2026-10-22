@@ -531,7 +531,7 @@ Checks before the PR:
 
 | Check | Result |
 |---|---|
-| Anker direct, defaults: target 4000 (adapter offers 5000), ~39 W, pump held | |
+| Anker direct, defaults: target 4000 (adapter offers 5000), ~39 W, pump held | **pass** (build 5, 2026-10-22 23:1x, 64 %): `PPS current target 4000 mA (adapter offers 5000 mA)`; engaged at diff 681, set 9820 mV, ibat ~6.9-7.0 A, 34 °C, Anker **39 W**, no backstop lines. Entry came 27 s after `charging`: the 250 mA/poll ramp at the 2 s default poll; Android jumps straight to the target (pps.c:3559) |
 | A 3 A (non-e-marked) cable, if one is around: target capped at 3000 | |
 | 100 W brick direct: identifies, pump engages, watts | |
 | Dock (Anker upstream): unchanged 7-9 W, no pump, DP + USB fine | |
