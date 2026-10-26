@@ -46,12 +46,15 @@ class AssertConfig(unittest.TestCase):
                 with self.subTest(fragment=frag.parent.name, line=line):
                     self.assertRegex(line, r"^(CONFIG_[A-Z0-9_]+=.+|# CONFIG_[A-Z0-9_]+ is not set)$")
 
-    def test_trace_candidate_asserts_the_tracer(self):
-        # c0's evidence is a tracepoint; a build without the tracer is no c0
-        # (eng review D3/D6). erhai_defconfig only selects these indirectly.
-        frag = (CANDIDATES / "00-cp-trace" / "extra.config").read_text().splitlines()
-        for sym in ("CONFIG_FTRACE=y", "CONFIG_TRACING=y", "CONFIG_TRACEPOINTS=y"):
-            self.assertIn(sym, frag)
+    def test_every_candidate_asserts_the_tracer(self):
+        # Every rung's evidence is the erhai_pps tracepoint (eng review D3/D6);
+        # a build without the tracer cannot produce its numbers.
+        # erhai_defconfig only selects these indirectly.
+        for d in sorted(p for p in CANDIDATES.iterdir() if p.is_dir()):
+            frag = (d / "extra.config").read_text().splitlines()
+            for sym in ("CONFIG_FTRACE=y", "CONFIG_TRACING=y", "CONFIG_TRACEPOINTS=y"):
+                with self.subTest(candidate=d.name, symbol=sym):
+                    self.assertIn(sym, frag)
 
 
 class Candidates(unittest.TestCase):

@@ -648,3 +648,35 @@ the dock read 6-8 W with the pack charging. 24 h soak not done.
 PR: https://github.com/TheMojoMan/oneplus-erhai-linux/pull/2 (branch
 `nadelacruz-00:erhai-pps-charging` → `7.3-rc5`, four commits, tree identical
 to build 8). HDMI issue: https://github.com/TheMojoMan/oneplus-erhai-linux/issues/3.
+
+## c3.5 — `40-dual-pump` (46-47 W, decision D1 2026-10-26)
+
+Base moved to `d8737c7112` (7.3-rc5 head: our PR #2 merged, plus PR #4
+`marc-hg/pd-fixed-9v` "erhai pps: request 9 V from plain PD chargers"). The
+2026-10-22 candidates are archived under `archive/2026-10-22-base-74ba8ddb4d/`.
+
+Why: at 3.76 A one SC8547A needs diff ~600 mV against its 700 mV drop line
+(c3 run 2b). Android's virtual_cp runs both pumps (docs/vendor-pps.md) and
+reaches 46-47 W screen-off (c-1).
+
+Patch `0001`: the PPS path closes the second SC8547A in parallel, using the
+same rules as the VOOC path's dual-CP code (`sc8547a.c`): close it once the
+master carries 1500 mA; retry the latch for 4 s while it settles; then drop it
+after 3 polls with it unlatched or the total under 1200 mA. The second pump is
+fed with the master and always opened with it. The ibus servo, the low-ibus
+guard and the target all use the **total** of both pumps. New
+`sc8547a_pps_slave_{engage,disengage,state}()`; new params
+`pps_cp_slave_{enable,engage_ma,drop_ma,settle_ms,drop_ticks}`. The trace
+sample gains `slave=` / `sibus=`.
+
+Runs (Anker direct, trace on before the plug, 3 min, battery < 70 %, stop
+above 45 °C):
+
+| Run | Target (mA) | `pps_cp_ibat_max_ma` | Slave latched? | ibus master/slave (mA) | diff (mV) | Pack (mA) | Temp (°C) | Anker watts |
+|---|---|---|---|---|---|---|---|---|
+| A | 4000 (default) | 9000 | | | | | | |
+| B | 4500 | 9000 | | | | | | |
+| C | 5000 | 11400 (vendor at 55 W) | | | | | | |
+
+Pass: the slave latches and shares (each pump ~half), diff stays well under
+650, and C reaches ~45-47 W screen off at ≤ 45 °C with no drops.
