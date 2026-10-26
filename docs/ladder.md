@@ -716,10 +716,38 @@ adapter's PPS max current and `pps_cable_safe_ma` 3000), `pps_cp_max_volt_mv`
 
 | Check | Result |
 |---|---|
-| Anker direct, no params: `PPS current target 5000 mA (adapter offers 5000 mA)`, both pumps, ~50 W | |
-| Bypass on → off → on → off without unplugging: on holds (both pumps open, never 0.1 W), off back to ~50 W | |
-| Unplug mid-charge, then the dock: dock charges (6-8 W, pack > 0) | |
-| 100 W PD brick direct (if possible): both pumps, watts by pack current | |
-| Long charge ~40 % → 80 %: max temp ≤ 45 °C, taper near 4.49 V without drops, `soc-limit` exit at 80 %, no `backstop` lines | |
+| Anker direct, no params: `PPS current target 5000 mA (adapter offers 5000 mA)`, both pumps, ~50 W | **pass** (build 10, 2026-10-26 21:30): target line on every Anker plug; slave closes ~1 s after the master |
+| Bypass on → off → on → off without unplugging: on holds (both pumps open, never 0.1 W), off back to ~50 W | **partial**: on = `charging inhibited by policy - pump off` both times (21:32:02, 21:36:04), off = `charge inhibit released` + re-entry; but the helper's OFF restarts the VOOC PHY (`attach, identifying adapter`), one drop at 21:34:57 (diff 991 during the re-identify, recovered), and after the second OFF three slave-close drops in a row used up all 5 attempts (21:36:35-21:37:40) → **fix 2 below** |
+| Unplug mid-charge, then the dock: dock charges (6-8 W, pack > 0) | not run in this session |
+| 100 W PD brick direct (if possible): both pumps, watts by pack current | not run |
+| Long charge ~40 % → 80 %: max temp ≤ 45 °C, taper near 4.49 V without drops, `soc-limit` exit at 80 %, no `backstop` lines | **mixed** (trace `~/c45-long.trace`, 45.7 min): 16.4 min straight on both pumps at **5.0 A total** (median 4998 mA, 2463 / 2535), soc 56 → 73 %, pack 8.8 A, 34-38 °C; max 40 °C over the whole trace; no backstop lines. **Taper bug:** at 22:11:30 `charging -> taper`, then the pump re-entered every 20-30 s (473 of 537 taper samples with cp=1, 2 drops) → **fix 1 below**. Final 80 % came on the SuperVOOC brick (`SoC limit reached`) |
 | SuperVOOC brick (regression: the patch touches sc8547a.c): the serial ladder identifies and delivers, erhai_pps stands down (`serial-vooc-engaged`), the VOOC dual-CP engages its own slave, and pack current matches the package kernel b34 on the same brick | **pass on `lab-40-dual-pump-9`** (same sc8547a changes as 41), 2026-10-26 18:03, 67-68 %: `adapter check ok (code 0xd8ee)`, `SVOOC identified … deliver curve[0] code 30`, `master CP enabled — fastchg delivering (vbus 8400 mV)`, `dual-CP: engaging slave under load (master 1725 mA)` 2 s later; erhai_pps saw `real_type 2` and stayed idle; pack +4.3…+5.2 A at 4.29 V, 31 °C; no errors in 60 s. The comparison with b34 on the same brick is not run yet |
 | Not runnable here: a 3 A cable (cap path), charging in suspend (known bug, TODOS P1) | |
+
+SuperVOOC on build 10: identified and delivered three times. Two sessions
+ended after 1-2 min with `dual-CP: dropping slave (total 38 mA) → link drop →
+adapter reset → declined`; the third ran 7.5 min to `SoC limit reached`. The
+**package kernel b34 shows the same endings** (boots -4/-6: dropping slave at
+total 40 mA after 4-12 min, link drop, re-handshake; one `thermal backstop`),
+so this is not a regression from these patches.
+
+Fixes found by the build 10 checks (candidate `42-pr-dual-pump`, patches
+`0001`-`0004`):
+1. **Taper re-entry (`0001`, also present in the merged PR #2 code).** The
+   CHARGING/TAPER branch ran `pps_cp_step()` and the current ramp in TAPER
+   too, so every time the pack dipped below CV the pump was re-lifted. Now the
+   pump step and the current ramp run only in CHARGING; TAPER stays on the
+   buck. Fixes: 907febbe79.
+2. **Slave closing at a thin diff (`0003`).** Every slave close in build 10's
+   log, binned by diff at the close (a failure = a master feed drop with diff
+   < 110 mV within 3 s): **< 180 mV: 16 closes, 6 dropped both pumps**
+   (21:36:35, 21:36:47, 21:36:59, 21:54:55, 22:13:15, 22:14:42, each with diff
+   68-109 mV at the drop); **≥ 180 mV: 6 closes, 0 failures** (180-200 mV:
+   0 of 4, ≥ 200 mV: 0 of 2). New
+   `pps_cp_slave_min_diff_mv` 200: the slave closes only with that much
+   headroom. The servo is still raising VBUS at that point, so it only delays
+   the close.
+
+Re-test on 42: bypass on/off ×2 without unplugging (no slave-close drops),
+a charge through taper to 80 % (no re-entry in taper), the dock after a
+session.

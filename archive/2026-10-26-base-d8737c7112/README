@@ -1,0 +1,1 @@
+Dual-pump candidates on d8737c7112. 40 = dual pump (runs A-C), 41 = + 5 A / 10.5 V / 11.4 A defaults (pre-PR checks, build 10). Superseded by 42 (taper and slave-gate fixes).
