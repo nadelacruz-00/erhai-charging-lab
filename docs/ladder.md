@@ -675,8 +675,8 @@ above 45 °C):
 | Run | Target (mA) | `pps_cp_ibat_max_ma` | Slave latched? | ibus master/slave (mA) | diff (mV) | Pack (mA) | Temp (°C) | Anker watts |
 |---|---|---|---|---|---|---|---|---|
 | A | 4000 (default) | 9000 | **yes**, 0.33 s after the master; held 143 s | 1893 / 1944 (total 3839, max 3866) | 405 median (191-421) | 6552 | 33-34 | **37-39** |
-| B | 4500 | 9000 | | | | | | |
-| C | 5000 | 11400 (vendor at 55 W) | | | | | | |
+| B | 4500 (ceiling 10500) | 9000 | **yes**, held 54 s until unplug | 2137 / 2195 (total 4338) | 479 median | 7847 | 32-34 | **43-44** |
+| C | 5000 (ceiling 10500) | 11400 (vendor at 55 W) | **yes**, held 178 s until unplug | 2394 / 2458 (total 4852, max 4873) | 552 median (159-646) | 8976 (max 9702) | 32-33 | **50, screen on and off** |
 
 Pass: the slave latches and shares (each pump ~half), diff stays well under
 650, and C reaches ~45-47 W screen off at ≤ 45 °C with no drops.
@@ -691,3 +691,17 @@ Run A (2026-10-26, `lab-40-dual-pump-9`, 60 %, trace `~/c35-runA.trace`):
   8.81 V at the tablet, so ~1.1 V is lost between the Anker and the tablet
   (~0.28 Ω) at 3.84 A. 5 A needs ~1.4 V of drop, i.e. a request near
   10.2 V. The vendor ceiling is 10500 mV (11000 − 500, docs/vendor-pps.md).
+
+Runs B and C (2026-10-26, battery 63 → 68 %, traces `~/c35-runB.trace` and
+`~/c35-runC.trace`), with `pps_cp_max_volt_mv=10500` (decision D2, the vendor
+ceiling):
+- B: total 4.34 A with the request at the 10.5 V ceiling; 9.04 V arrives at
+  the tablet (~1.46 V drop at 4.34 A).
+- **C: 50 W at the Anker with the screen on and off, above Android's
+  46-47 W (c-1).** Both pumps share evenly, diff 552 mV, pack 9.0 A
+  (max 9.7 A), 32-33 °C. Chip VBUS max 9322 mV, ADSP vbus max 9497 mV, both
+  under the 10 V VBUS_OVP while engaged. 4.85 A of 5 A: the request sits at
+  10.5 V, so the ceiling binds.
+- Loaded vbat reached 4458 mV, close to `pps_vbat_max_mv` 4490 (taper), so
+  expect the taper above ~70 %. That is the designed protection.
+- Unplugs were clean (feed drop → buck → detach exit).
