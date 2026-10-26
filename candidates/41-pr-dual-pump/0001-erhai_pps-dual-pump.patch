@@ -1,0 +1,355 @@
+diff --color -ruN h0/drivers/power/supply/erhai_pps.c h1/drivers/power/supply/erhai_pps.c
+--- h0/drivers/power/supply/erhai_pps.c	2026-10-25 22:16:50.000000000 +0800
++++ h1/drivers/power/supply/erhai_pps.c	2026-10-26 17:10:31.371711237 +0800
+@@ -355,6 +355,31 @@
+ module_param(pps_cp_settle_ms, uint, 0644);
+ MODULE_PARM_DESC(pps_cp_settle_ms, "grace after an engage before the low-ibus check (ms)");
+ 
++static bool pps_cp_slave_enable = true;
++module_param(pps_cp_slave_enable, bool, 0644);
++MODULE_PARM_DESC(pps_cp_slave_enable,
++		 "close the second SC8547A in parallel under load, as the vendor's virtual_cp does");
++
++static unsigned int pps_cp_slave_engage_ma = 1500;
++module_param(pps_cp_slave_engage_ma, uint, 0644);
++MODULE_PARM_DESC(pps_cp_slave_engage_ma,
++		 "close the second pump once the first carries this much bus current (mA; VOOC path 1500)");
++
++static unsigned int pps_cp_slave_drop_ma = 1200;
++module_param(pps_cp_slave_drop_ma, uint, 0644);
++MODULE_PARM_DESC(pps_cp_slave_drop_ma,
++		 "drop the second pump when both together carry less than this (mA; VOOC path 1200)");
++
++static unsigned int pps_cp_slave_settle_ms = 4000;
++module_param(pps_cp_slave_settle_ms, uint, 0644);
++MODULE_PARM_DESC(pps_cp_slave_settle_ms,
++		 "never judge the second pump inside this window after closing it (ms; VOOC path 4000)");
++
++static unsigned int pps_cp_slave_drop_ticks = 3;
++module_param(pps_cp_slave_drop_ticks, uint, 0644);
++MODULE_PARM_DESC(pps_cp_slave_drop_ticks,
++		 "consecutive low or unlatched polls before dropping the second pump (VOOC path 3)");
++
+ static unsigned int pps_cp_max_volt_mv = 9900;
+ module_param(pps_cp_max_volt_mv, uint, 0644);
+ MODULE_PARM_DESC(pps_cp_max_volt_mv,
+@@ -456,6 +481,9 @@
+ 	unsigned int		cp_low_cnt;	/* consecutive low-ibus polls */
+ 	unsigned long		cp_fed_at;	/* last successful feed */
+ 	bool			inhibit_held;	/* policy inhibit seen this session */
++	unsigned long		slave_since;	/* second pump closed (0 = open) */
++	unsigned long		slave_retry_at;	/* no new close before this */
++	unsigned int		slave_low_cnt;
+ 	unsigned int		cp_rearms;	/* pump attempts this plug */
+ };
+ 
+@@ -512,6 +540,35 @@
+ }
+ 
+ /* optional "keep the pump ADC on for the session" (sc8547a module) */
++/* optional second pump (sc8547a module); NULL on a single-CP build */
++struct erhai_pps_slave_api {
++	int	(*engage)(void);
++	void	(*disengage)(void);
++	bool	(*state)(int *ibus_ma);
++};
++
++static const struct erhai_pps_slave_api *pps_slave_get(void)
++{
++	static struct erhai_pps_slave_api api;
++
++	if (!api.engage) {
++		api.engage = (void *)symbol_get(sc8547a_pps_slave_engage);
++		api.disengage = (void *)symbol_get(sc8547a_pps_slave_disengage);
++		api.state = (void *)symbol_get(sc8547a_pps_slave_state);
++		if (!api.engage || !api.disengage || !api.state) {
++			if (api.engage)
++				symbol_put(sc8547a_pps_slave_engage);
++			if (api.disengage)
++				symbol_put(sc8547a_pps_slave_disengage);
++			if (api.state)
++				symbol_put(sc8547a_pps_slave_state);
++			memset(&api, 0, sizeof(api));
++			return NULL;
++		}
++	}
++	return &api;
++}
++
+ static void pps_sc_adc_hold(bool on)
+ {
+ 	static void (*fn)(bool on);
+@@ -679,6 +736,7 @@
+ 	p->stall_count = 0;
+ 	p->buck_off = false;
+ 	p->cp_lift_since = 0;
++	p->slave_since = 0;
+ 	/* the next attached poll re-runs the plug-in unsuspend */
+ 	p->plug_logged = false;
+ }
+@@ -770,8 +828,9 @@
+ static int pps_cp_release(struct erhai_pps *p, const char *why, bool count)
+ {
+ 	if (pps_cp_is_engaged())
+-		pps_cp_drop();
++		pps_cp_drop();		/* opens the second pump too */
+ 	p->cp_lift_since = 0;
++	p->slave_since = 0;
+ 	if (count) {
+ 		p->cp_rearms++;
+ 		p->cp_holdoff_until = jiffies + msecs_to_jiffies(pps_cp_rearm_ms);
+@@ -790,6 +849,65 @@
+  * voltage on the pump's own ibus, 40 mV at a time (vendor pps.c:3242-3361).
+  * Returns non-zero when the engine must exit.
+  */
++/*
++ * Second pump, run like the VOOC path's dual-CP engage (sc8547a.c): close it
++ * once the first pump carries pps_cp_slave_engage_ma, keep retrying the latch
++ * inside pps_cp_slave_settle_ms, then drop it after pps_cp_slave_drop_ticks
++ * polls with it unlatched or both pumps under pps_cp_slave_drop_ma.  Returns
++ * the second pump's bus current, so the caller servos on the total.
++ */
++static int pps_cp_slave_step(struct erhai_pps *p, int cibus, int diff)
++{
++	const struct erhai_pps_slave_api *sl = pps_slave_get();
++	int sibus = 0;
++	bool latched;
++
++	if (!sl)
++		return 0;
++	if (!pps_cp_slave_enable) {
++		if (p->slave_since) {
++			sl->disengage();
++			p->slave_since = 0;
++		}
++		return 0;
++	}
++	latched = sl->state(&sibus);
++	if (!p->slave_since) {
++		if (cibus >= (int)pps_cp_slave_engage_ma &&
++		    time_after_eq(jiffies, p->slave_retry_at) && !sl->engage()) {
++			p->slave_since = jiffies | 1;
++			p->slave_low_cnt = 0;
++			pr_info("erhai_pps: CP slave closing (master ibus %d mA diff %d mV set %u mV)\n",
++				cibus, diff, p->set_volt_mv);
++			trace_erhai_pps_cp_event("slave-engage", 0, -1, -1, cibus,
++						 p->set_volt_mv);
++		}
++		return 0;
++	}
++	if (time_before(jiffies, p->slave_since +
++			msecs_to_jiffies(pps_cp_slave_settle_ms))) {
++		if (!latched)
++			sl->engage();	/* retry the latch while settling */
++		return latched ? sibus : 0;
++	}
++	if (!latched || cibus + sibus < (int)pps_cp_slave_drop_ma) {
++		if (++p->slave_low_cnt >= pps_cp_slave_drop_ticks) {
++			sl->disengage();
++			pr_info("erhai_pps: CP slave dropped (%s, master %d mA slave %d mA)\n",
++				latched ? "low total" : "never latched", cibus, sibus);
++			trace_erhai_pps_cp_event("slave-drop", latched, -1, -1,
++						 cibus + sibus, p->set_volt_mv);
++			p->slave_since = 0;
++			p->slave_retry_at = jiffies +
++					    msecs_to_jiffies(pps_cp_slave_settle_ms);
++			return 0;
++		}
++	} else {
++		p->slave_low_cnt = 0;
++	}
++	return latched ? sibus : 0;
++}
++
+ static int pps_cp_step(struct erhai_pps *p)
+ {
+ 	const struct erhai_pps_sc_api *a = pps_sc_cp_get();
+@@ -824,6 +942,8 @@
+ 			return pps_cp_release(p, "drop", true);
+ 		}
+ 		p->cp_fed_at = jiffies;
++		/* from here on cibus is both pumps together */
++		cibus += pps_cp_slave_step(p, cibus, diff);
+ 		/* switching but carrying nothing: with the buck suspended the
+ 		 * pack would sit idle (vendor: 4 results under 300 mA) */
+ 		if (cibus < (int)pps_cp_min_ibus_ma &&
+@@ -1302,11 +1422,12 @@
+ 		}
+ 		p->charg_ticks++;
+ 		if (p->charg_ticks < pps_log_ticks)
+-			pr_info("erhai_pps: %s vbus %d mV vbat %d mV ibat %d mA soc %d%% t %dC set %u mV curr %u mA cp %s buck %s\n",
++			pr_info("erhai_pps: %s vbus %d mV vbat %d mV ibat %d mA soc %d%% t %dC set %u mV curr %u mA cp %s%s buck %s\n",
+ 				charging ? "charging" : "taper",
+ 				p->vbus_mv, p->vbat_mv, p->ibat_ma, p->soc,
+ 				p->temp_c, p->set_volt_mv, p->set_curr_ma,
+ 				pps_cp_is_engaged() ? "on" : "off",
++				p->slave_since ? "+slave" : "",
+ 				p->buck_off ? "off" : "on");
+ 		return;
+ 	}
+@@ -1361,7 +1482,9 @@
+ 		.chip_ibus_ma	= -1,
+ 		.r06		= -1,
+ 		.r07		= -1,
++		.slave_ibus_ma	= -1,
+ 	};
++	const struct erhai_pps_slave_api *sl;
+ 	u8 r06, r07;
+ 
+ 	if (!trace_erhai_pps_sample_enabled() || p->state == PPS_IDLE)
+@@ -1376,6 +1499,9 @@
+ 			s.r06 = r06;
+ 			s.r07 = r07;
+ 		}
++		sl = pps_slave_get();
++		if (sl)
++			s.slave_on = sl->state(&s.slave_ibus_ma);
+ 	}
+ 	trace_erhai_pps_sample(&s);
+ }
+diff --color -ruN h0/drivers/power/supply/erhai_pps_trace.h h1/drivers/power/supply/erhai_pps_trace.h
+--- h0/drivers/power/supply/erhai_pps_trace.h	2026-10-25 22:16:50.000000000 +0800
++++ h1/drivers/power/supply/erhai_pps_trace.h	2026-10-26 17:10:31.373066064 +0800
+@@ -34,6 +34,8 @@
+ 	int		chip_ibus_ma;
+ 	int		r06;		/* master converter status */
+ 	int		r07;		/* master CHG_EN (bit 7) */
++	bool		slave_on;	/* second pump's CHG_EN latched */
++	int		slave_ibus_ma;	/* second pump's bus current */
+ };
+ #endif
+ 
+@@ -59,6 +61,8 @@
+ 		__field(int, chip_ibus_ma)
+ 		__field(int, r06)
+ 		__field(int, r07)
++		__field(bool, slave_on)
++		__field(int, slave_ibus_ma)
+ 	),
+ 
+ 	TP_fast_assign(
+@@ -77,16 +81,19 @@
+ 		__entry->chip_ibus_ma = s->chip_ibus_ma;
+ 		__entry->r06 = s->r06;
+ 		__entry->r07 = s->r07;
++		__entry->slave_on = s->slave_on;
++		__entry->slave_ibus_ma = s->slave_ibus_ma;
+ 	),
+ 
+-	TP_printk("%s vbus=%d set=%u/%u vbat=%d ibat=%d soc=%d t=%d cp=%d buck_off=%d chip_vbus=%d chip_vbat=%d diff=%d ibus=%d r06=%d r07=%d",
++	TP_printk("%s vbus=%d set=%u/%u vbat=%d ibat=%d soc=%d t=%d cp=%d buck_off=%d chip_vbus=%d chip_vbat=%d diff=%d ibus=%d r06=%d r07=%d slave=%d sibus=%d",
+ 		  __get_str(state), __entry->adsp_vbus_mv,
+ 		  __entry->set_volt_mv, __entry->set_curr_ma,
+ 		  __entry->vbat_mv, __entry->ibat_ma, __entry->soc,
+ 		  __entry->temp_c, __entry->cp, __entry->buck_off,
+ 		  __entry->chip_vbus_mv, __entry->chip_vbat_mv,
+ 		  __entry->chip_vbus_mv - 2 * __entry->chip_vbat_mv,
+-		  __entry->chip_ibus_ma, __entry->r06, __entry->r07)
++		  __entry->chip_ibus_ma, __entry->r06, __entry->r07,
++		  __entry->slave_on, __entry->slave_ibus_ma)
+ );
+ 
+ TRACE_EVENT(erhai_pps_cp_event,
+diff --color -ruN h0/drivers/power/supply/sc8547a.c h1/drivers/power/supply/sc8547a.c
+--- h0/drivers/power/supply/sc8547a.c	2026-10-25 22:16:50.000000000 +0800
++++ h1/drivers/power/supply/sc8547a.c	2026-10-26 17:09:44.224356776 +0800
+@@ -824,7 +824,10 @@
+  */
+ static bool pps_cp_engaged;
+ static bool pps_adc_hold;	/* keep the ADC on across drops (PPS session) */
++static bool pps_slave_engaged;	/* PPS path asked the slave CP to close */
+ static bool sc8547_slave_is_on(void);	/* defined in the slave section below */
++static void sc8547_slave_feed_wd(void);
++static void sc8547_slave_reset(void);
+ 
+ void sc8547a_pps_cp_disengage(void);	/* defined below, called by feed()'s drop path */
+ 
+@@ -947,6 +950,8 @@
+ 		goto drop;
+ 	sc8547_write_byte(sc, SC8547_REG_09, 0x13);
+ 	sc8547_set_chg_enable(sc, true);
++	if (pps_slave_engaged)
++		sc8547_slave_feed_wd();
+ 	return 0;
+ drop:
+ 	sc8547a_pps_cp_disengage();
+@@ -958,6 +963,11 @@
+ {
+ 	struct sc8547a_device *sc = sc8547_master_dev;
+ 
++	/* never leave the slave switching without the master */
++	if (pps_slave_engaged) {
++		pps_slave_engaged = false;
++		sc8547_slave_reset();
++	}
+ 	pps_cp_engaged = false;
+ 	if (!sc)
+ 		return;
+@@ -1094,6 +1104,52 @@
+ 	sc8547_write_byte(sc, SC8547_REG_11, 0x00);			/* ADC off */
+ }
+ 
++/*
++ * Second pump for the PPS path.  The vendor's virtual_cp runs both SC8547A
++ * in parallel; one pump alone needs vbus - 2*vbat near its 700 mV ceiling at
++ * ~3.8 A (lab c3 run 2b).  The slave only latches CHG_EN inside its 2:1
++ * window, which holds once the master carries real current, so the engine
++ * closes it under load (the same threshold engage as the VOOC path) and calls
++ * this again until sc8547a_pps_slave_state() reports it latched.  The
++ * non-VOOC decline path reset the slave, so re-apply its parallel profile
++ * on the first close.
++ */
++int sc8547a_pps_slave_engage(void)
++{
++	struct sc8547a_device *sc = sc8547_master_dev;
++
++	if (!sc || !sc8547_slave_dev)
++		return -ENODEV;
++	if (!pps_cp_engaged || sc8547a_fastchg_delivering())
++		return -EBUSY;
++	if (!pps_slave_engaged)
++		sc8547_slave_hw_setting(sc);
++	sc8547_slave_cp_enable(sc, true);
++	pps_slave_engaged = true;
++	return 0;
++}
++EXPORT_SYMBOL_GPL(sc8547a_pps_slave_engage);
++
++void sc8547a_pps_slave_disengage(void)
++{
++	if (!pps_slave_engaged)
++		return;
++	pps_slave_engaged = false;
++	sc8547_slave_reset();
++	if (sc8547_master_dev)
++		dev_info(sc8547_master_dev->dev, "PPS CP: slave disengaged\n");
++}
++EXPORT_SYMBOL_GPL(sc8547a_pps_slave_disengage);
++
++/* true while the slave's CHG_EN is latched; *ibus_ma = its bus current */
++bool sc8547a_pps_slave_state(int *ibus_ma)
++{
++	if (ibus_ma)
++		*ibus_ma = pps_slave_engaged ? sc8547_slave_ibus() : 0;
++	return pps_slave_engaged && sc8547_slave_is_on();
++}
++EXPORT_SYMBOL_GPL(sc8547a_pps_slave_state);
++
+ /* ==================== VOOC protocol state machine ===================== *
+  * Ported from the OnePlus vendor engine (oplus_ap_voocphy.c), reduced to the
+  * SVOOC adapter-authentication ladder. On each VOOC IRQ the RX word is split
+diff --color -ruN h0/drivers/power/supply/sc8547a.h h1/drivers/power/supply/sc8547a.h
+--- h0/drivers/power/supply/sc8547a.h	2026-10-25 22:16:50.000000000 +0800
++++ h1/drivers/power/supply/sc8547a.h	2026-10-26 17:09:44.228856091 +0800
+@@ -48,6 +48,11 @@
+ /* Keep the master ADC on for a whole PPS session (on) / release it (off). */
+ void sc8547a_pps_adc_hold(bool on);
+ 
++/* Second pump (slave SC8547A) for the PPS path; see sc8547a.c. */
++int sc8547a_pps_slave_engage(void);
++void sc8547a_pps_slave_disengage(void);
++bool sc8547a_pps_slave_state(int *ibus_ma);
++
+ /* Raw master REG_06 / REG_07 for the erhai_pps trace (read-only). */
+ int sc8547a_pps_regs(u8 *r06, u8 *r07);
+ 

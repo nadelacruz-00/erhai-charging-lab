@@ -705,3 +705,20 @@ ceiling):
 - Loaded vbat reached 4458 mV, close to `pps_vbat_max_mv` 4490 (taper), so
   expect the taper above ~70 %. That is the designed protection.
 - Unplugs were clean (feed drop → buck → detach exit).
+
+## c4.5 — `41-pr-dual-pump` (pre-PR checks)
+
+Patches `0001` (dual pump, as built in 40) and `0002`: defaults
+`pps_target_curr_ma`/`pps_max_curr_ma` 5000 (still capped per plug by the
+adapter's PPS max current and `pps_cable_safe_ma` 3000), `pps_cp_max_volt_mv`
+10500 (the vendor ceiling, D2) and `pps_cp_ibat_max_ma` 11400 (vendor
+`pps_ibat_over` at 55 W). Settings as in run C.
+
+| Check | Result |
+|---|---|
+| Anker direct, no params: `PPS current target 5000 mA (adapter offers 5000 mA)`, both pumps, ~50 W | |
+| Bypass on → off → on → off without unplugging: on holds (both pumps open, never 0.1 W), off back to ~50 W | |
+| Unplug mid-charge, then the dock: dock charges (6-8 W, pack > 0) | |
+| 100 W PD brick direct (if possible): both pumps, watts by pack current | |
+| Long charge ~40 % → 80 %: max temp ≤ 45 °C, taper near 4.49 V without drops, `soc-limit` exit at 80 %, no `backstop` lines | |
+| Not runnable here: a 3 A cable (cap path), SuperVOOC (no socket), charging in suspend (known bug, TODOS P1) | |
