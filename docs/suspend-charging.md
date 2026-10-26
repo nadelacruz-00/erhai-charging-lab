@@ -1,4 +1,8 @@
-# Charging while suspended (opened 2026-10-26)
+# Charging while suspended (opened 2026-10-26, PARKED 2026-10-26)
+
+**Parked by the owner after run 1** in favour of the 46-47 W work. Run 2
+(the buck-only control) was not run. The bug is real in b34: with the pump
+engaged, s2idle leaves nothing charging (Anker 0.1 W).
 
 Owner report: "my device won't charge when suspend is active". Kernel at the
 time: package `7.3.0-rc5-sm8750-themojoman+b34` (contains the merged

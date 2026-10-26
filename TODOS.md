@@ -14,6 +14,18 @@
 **Priority:** P2
 **Depends on:** c4 merged
 
+### Charging stops during s2idle while the pump runs (b34, parked)
+
+**What:** With the pump engaged, a suspend leaves nothing charging: the Anker read 0.1 W and the pack went 50 -> 50 % over 5 min. On wake the engine exits with pack-stall, and the bus sat at ~10.0 V unloaded during the sleep.
+
+**Why:** erhai_pps has no PM handling. Its poll is a plain delayed work, so the SC8547A's 1000 ms watchdog expires while the buck is still ICL-suspended.
+
+**Context:** docs/suspend-charging.md (run 1, the fix options). Run 2, the buck-only control, was not run.
+
+**Effort:** S-M
+**Priority:** P1 (shipped in b31+)
+**Depends on:** run 2, to choose between a buck hand-off at suspend and a wakeup source
+
 ### Open questions from the c3 runs
 
 - Anker display vs trace: run 2 showed 32-33 W where ibus × set ≈ 27.5 W (run 1b agreed at 28 W). Check the pump's ibus ADC scale against a USB-C meter.
