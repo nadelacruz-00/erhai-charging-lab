@@ -721,4 +721,5 @@ adapter's PPS max current and `pps_cable_safe_ma` 3000), `pps_cp_max_volt_mv`
 | Unplug mid-charge, then the dock: dock charges (6-8 W, pack > 0) | |
 | 100 W PD brick direct (if possible): both pumps, watts by pack current | |
 | Long charge ~40 % → 80 %: max temp ≤ 45 °C, taper near 4.49 V without drops, `soc-limit` exit at 80 %, no `backstop` lines | |
-| Not runnable here: a 3 A cable (cap path), SuperVOOC (no socket), charging in suspend (known bug, TODOS P1) | |
+| SuperVOOC brick (regression: the patch touches sc8547a.c): the serial ladder identifies and delivers, erhai_pps stands down (`serial-vooc-engaged`), the VOOC dual-CP engages its own slave, and pack current matches the package kernel b34 on the same brick | |
+| Not runnable here: a 3 A cable (cap path), charging in suspend (known bug, TODOS P1) | |
