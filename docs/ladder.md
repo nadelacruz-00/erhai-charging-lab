@@ -674,9 +674,20 @@ above 45 °C):
 
 | Run | Target (mA) | `pps_cp_ibat_max_ma` | Slave latched? | ibus master/slave (mA) | diff (mV) | Pack (mA) | Temp (°C) | Anker watts |
 |---|---|---|---|---|---|---|---|---|
-| A | 4000 (default) | 9000 | | | | | | |
+| A | 4000 (default) | 9000 | **yes**, 0.33 s after the master; held 143 s | 1893 / 1944 (total 3839, max 3866) | 405 median (191-421) | 6552 | 33-34 | **37-39** |
 | B | 4500 | 9000 | | | | | | |
 | C | 5000 | 11400 (vendor at 55 W) | | | | | | |
 
 Pass: the slave latches and shares (each pump ~half), diff stays well under
 650, and C reaches ~45-47 W screen off at ≤ 45 °C with no drops.
+
+Run A (2026-10-26, `lab-40-dual-pump-9`, 60 %, trace `~/c35-runA.trace`):
+- **Dual-pump works:** `CP slave closing (master ibus 1606 mA diff 210 mV)`
+  0.33 s after the master engaged. The pumps split almost evenly (1.89 / 1.94 A)
+  for the whole run with no drops. diff fell from ~606 mV (one pump at 3.76 A,
+  run 2b) to ~405 mV.
+- **The new limit is the 9900 mV ceiling:** the servo reached it and the total
+  stopped at 3.84 A, short of the 4000 target. At 9.9 V requested the ADSP read
+  8.81 V at the tablet, so ~1.1 V is lost between the Anker and the tablet
+  (~0.28 Ω) at 3.84 A. 5 A needs ~1.4 V of drop, i.e. a request near
+  10.2 V. The vendor ceiling is 10500 mV (11000 − 500, docs/vendor-pps.md).
