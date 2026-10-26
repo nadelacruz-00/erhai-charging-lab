@@ -52,6 +52,27 @@ Pass/fail reading: while suspended, the Anker reads ~0.1 W and the pack does
 not gain → hypothesis confirmed for PPS. Buck-only control gains → the fix
 belongs in erhai_pps.
 
+## Run 1: pump on (2026-10-26, b34, Anker direct, 50 %)
+
+Suspended with `rtcwake -m no -s 300 && systemctl suspend` (the real logind
+path; the kernel logs s2idle even though `/sys/power/mem_sleep` defaults to
+`[deep]`, so `rtcwake -m mem` would have tested deep instead).
+
+| Time | Event |
+|---|---|
+| 16:41:07 | `CP 2:1 ENGAGED` (diff 645 mV), Anker ~39 W |
+| 16:44:17 | `PM: suspend entry (s2idle)` |
+| asleep | **Anker 0.1 W** (owner) |
+| 16:49:17 | `PM: suspend exit`; sc8547a register reads fail with -13 during resume |
+| 16:49:21 | `erhai_pps: exit: pack-stall`: ~4.5 s of ibat < 100 mA right after wake |
+| 16:49:23 | `adapter online … vbus 10011 mV`: the bus sat at ~10.0 V unloaded |
+
+Battery 50 % → 50 % over 5 min (~7 % expected at 39 W). **Hypothesis confirmed
+for the PPS pump path:** nothing charges in s2idle. Side finding: the Anker
+stays at the pump's last request (up to the 9.9 V ceiling) with no load for the
+whole suspend. The buck is rated for it (VAC_OVP 12 V), but the fix should also
+drop the bus before sleeping.
+
 ## Fix options (decide after the reproduction)
 
 - A) Hand off to the buck before suspend: a PM notifier
