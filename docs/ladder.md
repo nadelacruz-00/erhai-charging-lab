@@ -800,3 +800,7 @@ showing `attempts refilled` after any drop.
 PR branch: local `erhai-pps-dual-pump` in the port checkout, 6 commits on
 7.3-rc5 head `1dc134a720` (no charging-file changes since d8737c7112), charging
 tree byte-for-byte build 43. Description draft: `work/pr3-body.md`.
+
+PR opened 2026-10-27: https://github.com/TheMojoMan/oneplus-erhai-linux/pull/7
+(`nadelacruz-00:erhai-pps-dual-pump` → `7.3-rc5`, 6 commits, head `d444e68f04`, on
+upstream `1dc134a720`; charging tree byte-for-byte build 43).
