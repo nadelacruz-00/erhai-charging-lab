@@ -790,8 +790,12 @@ showing `attempts refilled` after any drop.
   10:46:55, 10:47:58); the fourth plug (10:48:50) held at 50 W with pack
   +6.2…+7.3 A, 36 °C. That is a power bank near its limit. The same bank held
   5 A for 16 min on 2026-10-26.
-- Not run on 43: SuperVOOC (0006 touches the VOOC decline/stop paths, so run it
-  before the PR) and the dock below 80 %.
+- **SuperVOOC on 43, pass** (10:56:14-18, 67 %): `adapter check ok (code 0x4cf0)`,
+  `SVOOC identified … curve[0] code 35`, `master CP enabled — fastchg delivering`,
+  `dual-CP: engaging slave under load (master 1659 mA)`; erhai_pps idle (`real_type 2`);
+  pack +3.2…+4.35 A, 35 °C. The Anker session before it held both pumps from
+  10:48:50 until the unplug at 10:55:06.
+- Not run on 43: the dock below 80 %.
 
 PR branch: local `erhai-pps-dual-pump` in the port checkout, 6 commits on
 7.3-rc5 head `1dc134a720` (no charging-file changes since d8737c7112), charging
