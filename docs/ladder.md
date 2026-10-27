@@ -751,3 +751,27 @@ Fixes found by the build 10 checks (candidate `42-pr-dual-pump`, patches
 Re-test on 42: bypass on/off ×2 without unplugging (no slave-close drops),
 a charge through taper to 80 % (no re-entry in taper), the dock after a
 session.
+
+## c4.6 results (`42-pr-dual-pump-11`, 2026-10-27, 60 → 80 %, trace `~/c46-check.trace`)
+
+| Check | Result |
+|---|---|
+| Slave gate | **pass**: every close at diff 205-230 mV, no slave-close drops (build 10: 6 of 16 under 180 mV) |
+| Taper | **pass**: `charging -> taper` 08:51:38 → `exit: soc-limit` 09:01:46 with no pump re-entry |
+| 80 % stop | **pass** (`soc-limit`, chglim holds at 80) |
+| Bypass on | **pass**: `charging inhibited by policy` 08:23:31 and 08:27:28 |
+| Bypass off | **partial**: the pump returns, but each OFF cost a drop: 08:26:29 and 08:29:50, in the same second as `auto fast-charge declined`, diff 859 / 931 mV (load vanished) |
+| Long session | **partial**: four drops with the bus *falling* ~0.9 V in 0.3 s from steady 2.4-2.5 A per pump (t=836.9, 871.3, 1351.9, 1610.4; chip vbus 8.9-9.2 → 8.0-8.3 V, ibus → 3 mA). That is an adapter-side sag (at t=871 the Anker was already holding only ~3 A of 5 A). With the two bypass drops, 5 attempts were used in 6 min → buck only until a replug |
+| Dock at 80 % | dock on 5 V (`real_type 6`, vbus 4809 mV, `icl was 1400000`). The upstream 9 V request (PR #4) is held off by design while the 80 % limit inhibits charging; the pack covers the load (-1.2 to -2.7 A). The 9 V the owner sees is the Anker → dock leg |
+
+Fixes (candidate `43-pr-dual-pump`, patches `0005`-`0006` on top of 42's four):
+- `0005` erhai_pps: a pump that has run `pps_cp_rearm_refill_ms` (60 s) refills
+  the attempt budget. The budget still stops thrashing (5 drops inside a minute)
+  but no longer ends fast charging after isolated drops over a long charge.
+- `0006` sc8547a: while the PPS engine owns the CP (`pps_cp_engaged`), the VOOC
+  decline and stop paths and the attach pre-arm tear down only the VOOC protocol
+  registers (new `sc8547_reset_vooc_protocol()`), not the pumps. The desktop
+  bypass helper's "vooc 0 → 1" restart on bypass-off goes through exactly these paths.
+
+Re-test on 43: bypass off ×2 with no drop at `declined`, and a 10+ min charge
+showing `attempts refilled` after any drop.
