@@ -775,3 +775,24 @@ Fixes (candidate `43-pr-dual-pump`, patches `0005`-`0006` on top of 42's four):
 
 Re-test on 43: bypass off ×2 with no drop at `declined`, and a 10+ min charge
 showing `attempts refilled` after any drop.
+
+## c4.7 results (`43-pr-dual-pump-12`, 2026-10-27, 60 → 62 %)
+
+- **Bypass-off restart, pass:** `VOOC PHY stopped` / `armed` 10:40:30-31,
+  `auto fast-charge declined` 10:40:37, and the pumps carried on (`CP slave
+  closing … diff 212 mV` the same second). No feed drop.
+- **Refill, pass:** an adapter sag at 10:41:12 (diff −135, ibus 5 mA) cost
+  attempt 1/5; the pump re-entered and at 10:42:23 logged `CP steady for
+  60000 ms - attempts refilled (1 used)`.
+- **Anker state:** first plug `adapter offers 3500 mA` (34 W, the cap
+  working). On later plugs it offered 5000 mA but reset its own output
+  (`exit: detach`) 10-22 s into each 5 A ramp at ~48-50 W (10:45:49,
+  10:46:55, 10:47:58); the fourth plug (10:48:50) held at 50 W with pack
+  +6.2…+7.3 A, 36 °C. That is a power bank near its limit. The same bank held
+  5 A for 16 min on 2026-10-26.
+- Not run on 43: SuperVOOC (0006 touches the VOOC decline/stop paths, so run it
+  before the PR) and the dock below 80 %.
+
+PR branch: local `erhai-pps-dual-pump` in the port checkout, 6 commits on
+7.3-rc5 head `1dc134a720` (no charging-file changes since d8737c7112), charging
+tree byte-for-byte build 43. Description draft: `work/pr3-body.md`.
